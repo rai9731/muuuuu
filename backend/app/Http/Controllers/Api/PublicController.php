@@ -42,7 +42,7 @@ class PublicController extends Controller
         return ['data' => [
             'texts' => \App\Models\Setting::read('landing', []) + [
                 'hero_title' => 'Compre e venda gado direto com o produtor',
-                'hero_subtitle' => 'Anúncios com fotos, documentação e pagamento seguro.',
+                'hero_subtitle' => 'Tudo com anúncios completos, fotos, documentação e pagamento seguro.',
                 'cta_title' => 'Pronto para negociar?', 'cta_subtitle' => 'Crie sua conta e anuncie em minutos.',
                 'contact_email' => '', 'contact_phone' => '', 'contact_address' => '',
                 'instagram' => '', 'facebook' => '', 'youtube' => '',

@@ -27,6 +27,20 @@ const ADVANTAGES = [
   { icon: Truck, title: 'Frete ou retirada', text: 'Escolha receber com frete ou retirar na propriedade, com acompanhamento do pedido.' },
 ];
 
+/** Destaca as duas últimas palavras do título em degradê dourado. */
+function HeroTitle({ text }: { text: string }) {
+  const words = text.trim().split(/\s+/);
+  if (words.length < 4) return <>{text}</>;
+  return (
+    <>
+      {words.slice(0, -2).join(' ')}{' '}
+      <span className="whitespace-nowrap bg-gradient-to-r from-[#ffe08a] via-trigo to-[#f0a957] bg-clip-text text-transparent [text-shadow:none]">
+        {words.slice(-2).join(' ')}
+      </span>
+    </>
+  );
+}
+
 export default function Landing() {
   const { data, loading } = useAsync(() => publicService.landing(), []);
   const carousel = useRef<HTMLDivElement>(null);
@@ -45,14 +59,14 @@ export default function Landing() {
       <section className="relative isolate flex min-h-[92vh] items-center overflow-hidden px-4 pb-20 pt-32 sm:px-6">
         <PastureScene />
         <div className="mx-auto w-full max-w-7xl">
-          <div className="max-w-2xl animate-fade-up">
+          <div className="max-w-5xl animate-fade-up">
             <span className="glass-dark inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium text-white">
               <Lock className="h-4 w-4 text-trigo" aria-hidden /> Pagamento seguro via Pix, cartão e boleto
             </span>
-            <h1 className="mt-6 text-4xl font-bold leading-tight text-white drop-shadow-sm sm:text-5xl lg:text-6xl">
-              {texts?.hero_title ?? 'Compre e venda gado com segurança e praticidade'}
+            <h1 className="mt-6 text-balance text-5xl font-extrabold leading-[0.98] tracking-tighter text-white [text-shadow:0_4px_32px_rgb(0_0_0/0.35)] sm:text-7xl lg:text-8xl">
+              <HeroTitle text={texts?.hero_title ?? 'Compre e venda gado com segurança e praticidade'} />
             </h1>
-            <p className="mt-5 max-w-xl text-lg text-white/90">
+            <p className="mt-7 max-w-2xl text-lg font-medium text-white [text-shadow:0_2px_16px_rgb(0_0_0/0.55)] sm:text-xl">
               {texts?.hero_subtitle ?? 'O marketplace que conecta produtores de todo o Brasil. Anuncie suas vacas e encontre os melhores animais de leite e de corte.'}
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
