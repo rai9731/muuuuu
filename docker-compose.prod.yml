@@ -1,0 +1,118 @@
+# Ambiente de PRODUÇÃO — separado do compose de desenvolvimento.
+# app, scheduler e queue compartilham o mesmo Dockerfile.prod e montam o código por volume.
+name: boinarede-prod
+
+x-php: &php
+  build:
+    context: .
+    dockerfile: docker/php/Dockerfile.prod
+    args:
+      UID: ${UID:-1000}
+      GID: ${GID:-1000}
+  image: boinarede-php-prod
+  env_file: .env
+  restart: unless-stopped
+  working_dir: /var/www/html
+  volumes:
+    - ./backend:/var/www/html
+    - ${STORAGE_PATH:-/var/app/storage/uploads}:/var/app/storage/uploads
+  networks: [boinarede]
+
+services:
+  app:
+    <<: *php
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  scheduler:
+    <<: *php
+    command: sh -c "while true; do php artisan schedule:run --no-interaction; sleep 60; done"
+    depends_on:
+      app:
+        condition: service_started
+
+  queue:
+    <<: *php
+    command: php artisan queue:work redis --sleep=3 --tries=3 --max-time=3600
+    depends_on:
+      app:
+        condition: service_started
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+    volumes:
+      - ./backend:/var/www/html:ro
+      - ${STORAGE_PATH:-/var/app/storage/uploads}:/var/app/storage/uploads:ro
+      - ./docker/nginx/active.conf:/etc/nginx/templates/default.conf.template:ro
+      - certbot_www:/var/www/certbot:ro
+      - certbot_certs:/etc/letsencrypt:ro
+    depends_on: [app]
+    networks: [boinarede]
+
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    command: ["--default-time-zone=-03:00", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      TZ: America/Sao_Paulo
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [boinarede]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [boinarede]
+
+  # Apenas build do frontend — não é um serviço de longa duração.
+  node:
+    image: node:22-alpine
+    profiles: [build]
+    working_dir: /app
+    volumes:
+      - ./:/app
+    networks: [boinarede]
+
+  certbot:
+    image: certbot/certbot
+    profiles: [certbot]
+    volumes:
+      - certbot_www:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+    entrypoint: sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
+
+volumes:
+  mysql_data:
+  redis_data:
+  certbot_www:
+  certbot_certs:
+
+networks:
+  boinarede:
+    driver: bridge

@@ -1,0 +1,73 @@
+# Ambiente de DESENVOLVIMENTO — código montado por volume, hot reload no backend e no frontend.
+name: boinarede
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    image: boinarede-php-dev
+    env_file: .env
+    working_dir: /var/www/html
+    volumes:
+      - ./backend:/var/www/html
+      - ${STORAGE_PATH:-./storage/uploads}:/var/app/storage/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks: [boinarede]
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "${APP_PORT:-8080}:80"
+    volumes:
+      - ./backend:/var/www/html:ro
+      - ${STORAGE_PATH:-./storage/uploads}:/var/app/storage/uploads:ro
+      - ./docker/nginx/development.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on: [app]
+    networks: [boinarede]
+
+  mysql:
+    image: mysql:8.0
+    command: ["--default-time-zone=-03:00", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      TZ: America/Sao_Paulo
+    ports:
+      - "${DB_EXTERNAL_PORT:-3307}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [boinarede]
+
+  # Servidor Vite com HMR (perfil dev). O Nginx encaminha para cá tudo que não é API.
+  node:
+    image: node:22-alpine
+    profiles: [dev]
+    working_dir: /app
+    environment:
+      VITE_HMR_CLIENT_PORT: ${APP_PORT:-8080}
+    volumes:
+      - ./:/app
+      - node_modules:/app/node_modules
+    command: sh -c "npm install --no-audit --no-fund && npm run dev -- --host 0.0.0.0"
+    networks: [boinarede]
+
+volumes:
+  mysql_data:
+  node_modules:
+
+networks:
+  boinarede:
+    driver: bridge

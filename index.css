@@ -1,0 +1,119 @@
+@import 'tailwindcss';
+
+/* ─── Paleta rural e tipografia ─── */
+@theme {
+  --font-sans: 'Poppins', 'Inter', system-ui, sans-serif;
+
+  --color-pasto: #2f5d3a;
+  --color-pasto-dark: #234a2c;
+  --color-folha: #4f8a4b;
+  --color-terra: #8b5e3c;
+  --color-trigo: #d9a441;
+  --color-trigo-dark: #b9862a;
+  --color-palha: #e8d9b5;
+  --color-creme: #f7f3ea;
+  --color-grafite: #2b2b2b;
+
+  --shadow-glass: 0 8px 32px -8px rgb(20 40 25 / 0.25), 0 2px 8px -2px rgb(20 40 25 / 0.12);
+  --shadow-glass-lg: 0 24px 60px -16px rgb(20 40 25 / 0.35);
+
+  --animate-fade-up: fade-up 0.35s ease-out both;
+  --animate-fill: fill-in 0.5s ease-out both;
+  --animate-slide-in: slide-in 0.25s ease-out both;
+
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fill-in {
+    0% { background-color: rgb(217 164 65 / 0.45); }
+    100% { background-color: rgb(255 255 255 / 0.7); }
+  }
+  @keyframes slide-in {
+    from { opacity: 0; transform: translateX(100%); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+}
+
+@layer base {
+  html { scroll-behavior: smooth; }
+  body {
+    @apply bg-creme text-grafite font-sans antialiased;
+  }
+  h1, h2, h3, h4 { @apply font-semibold tracking-tight; }
+  :focus-visible {
+    outline: 3px solid var(--color-trigo);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+}
+
+/* ─── Glassmorphism ─── */
+@utility glass {
+  background-color: rgb(255 255 255 / 0.62);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid rgb(255 255 255 / 0.55);
+  box-shadow: var(--shadow-glass);
+}
+
+/* Vidro sobre fundos escuros (hero, login) — texto claro */
+@utility glass-dark {
+  background-color: rgb(255 255 255 / 0.14);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid rgb(255 255 255 / 0.28);
+  box-shadow: var(--shadow-glass);
+}
+
+@utility glass-strong {
+  background-color: rgb(255 255 255 / 0.85);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid rgb(255 255 255 / 0.7);
+  box-shadow: var(--shadow-glass-lg);
+}
+
+/* Fundo rural das áreas logadas: campo ao amanhecer em gradiente suave */
+@utility bg-rural {
+  background:
+    radial-gradient(1100px 520px at 0% -10%, rgb(217 164 65 / 0.28), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgb(79 138 75 / 0.25), transparent 60%),
+    radial-gradient(1000px 600px at 50% 110%, rgb(139 94 60 / 0.18), transparent 60%),
+    linear-gradient(180deg, #f7f3ea 0%, #efe6d2 100%);
+  background-attachment: fixed;
+}
+
+/* Céu ao amanhecer — base do cenário de pasto (components/layout/PastureScene) */
+@utility bg-dawn {
+  background: linear-gradient(180deg, #f0a957 0%, #f2c987 28%, #e8d9b5 48%, #9cbf7a 62%, #4f8a4b 78%, #2f5d3a 100%);
+}
+
+@utility hover-lift {
+  transition: transform 220ms ease, box-shadow 220ms ease;
+  &:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-glass-lg);
+  }
+}
+
+@utility skeleton {
+  background: linear-gradient(90deg, rgb(232 217 181 / 0.5) 25%, rgb(247 243 234 / 0.9) 50%, rgb(232 217 181 / 0.5) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 0.75rem;
+}
+
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(47 93 58 / 0.35) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

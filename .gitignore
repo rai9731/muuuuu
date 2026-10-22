@@ -1,0 +1,56 @@
+# ─── Ambiente / segredos ───
+.env
+.env.*
+!.env.example
+!.env.production.example
+*.pem
+*.key
+
+# ─── Sistema / editores ───
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.log
+
+# ─── Frontend (React + Vite) ───
+node_modules/
+dist/
+dist-ssr/
+*.tsbuildinfo
+.eslintcache
+coverage/
+vite.config.*.timestamp-*
+
+# ─── Backend (Laravel) ───
+backend/vendor/
+backend/.env
+backend/.env.backup
+backend/.phpunit.cache/
+backend/.phpunit.result.cache
+backend/public/build/
+backend/public/hot
+backend/public/storage
+backend/public/version.json
+backend/storage/*.key
+backend/storage/app/*
+!backend/storage/app/.gitignore
+backend/storage/framework/cache/*
+backend/storage/framework/sessions/*
+backend/storage/framework/views/*
+backend/storage/framework/testing/*
+backend/storage/logs/*
+!backend/storage/**/.gitignore
+backend/bootstrap/cache/*.php
+backend/database/*.sqlite
+backend/auth.json
+backend/npm-debug.log
+backend/yarn-error.log
+
+# ─── Uploads (disco local) ───
+storage/uploads/*
+!storage/uploads/.gitkeep
+
+# ─── Docker / Nginx ───
+docker/nginx/active.conf
