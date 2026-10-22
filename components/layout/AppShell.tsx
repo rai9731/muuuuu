@@ -9,6 +9,7 @@ import { useUnreadCounts } from '@hooks/useUnreadCounts';
 import { useToast } from '@hooks/useToast';
 import { Avatar } from '@components/ui/Display';
 import { Logo } from './Logo';
+import { PastureBackdrop } from './PastureScene';
 
 export interface NavItem {
   to: string;
@@ -104,7 +105,8 @@ export function AppShell({ nav, variant, sidebarFooter }: AppShellProps) {
   );
 
   return (
-    <div className="bg-rural min-h-screen">
+    <div className="min-h-screen">
+      <PastureBackdrop />
       <a href="#conteudo" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-xl focus:bg-white focus:px-4 focus:py-2">
         Pular para o conteúdo
       </a>
@@ -203,7 +205,13 @@ export function AppShell({ nav, variant, sidebarFooter }: AppShellProps) {
 
       <div className="mx-auto flex gap-6 px-3 py-6 sm:px-4">
         {/* Menu lateral (desktop) */}
-        <aside className="glass sticky top-24 hidden h-[calc(100vh-7.5rem)] w-64 shrink-0 overflow-y-auto rounded-3xl p-4 lg:block">{sidebar}</aside>
+        <aside className={`${variant === 'admin' ? 'glass-strong' : 'glass'} sticky top-24 hidden h-[calc(100vh-7.5rem)] w-64 shrink-0 overflow-y-auto rounded-3xl p-4 lg:block`}>
+          {variant === 'admin' && (
+            <p className="mb-3 flex items-center gap-2 px-3 text-xs font-bold uppercase tracking-wider text-terra">
+              <Shield className="h-4 w-4" aria-hidden /> Administração
+            </p>
+          )}
+          {sidebar}</aside>
 
         <main id="conteudo" className="min-w-0 flex-1 pb-10">
           <Outlet />

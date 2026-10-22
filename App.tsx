@@ -8,6 +8,7 @@ import { useAuth } from '@hooks/useAuth';
 import { AppShell, type NavItem } from '@components/layout/AppShell';
 import { FullScreenLoader, GuestOnly, RequireAdmin, RequireAuth } from '@components/layout/Guards';
 import { PublicHeader } from '@components/layout/PublicHeader';
+import { PastureBackdrop } from '@components/layout/PastureScene';
 import { Footer } from '@components/layout/Footer';
 import { LinkButton } from '@components/ui/Button';
 
@@ -96,7 +97,8 @@ function AdminLayout() {
 
 function PublicLayout() {
   return (
-    <div className="bg-rural min-h-screen">
+    <div className="min-h-screen">
+      <PastureBackdrop />
       <PublicHeader />
       <main id="conteudo" className="mx-auto max-w-7xl px-3 pb-16 pt-24 sm:px-6">
         <Outlet />

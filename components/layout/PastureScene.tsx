@@ -78,6 +78,16 @@ export function PastureScene({ overlay = 'strong' }: { overlay?: 'strong' | 'sof
   );
 }
 
+/** Cenário fixo atrás das áreas logadas/públicas: as vaquinhas ficam visíveis através do vidro. */
+export function PastureBackdrop() {
+  return (
+    <div className="fixed inset-0 -z-10" aria-hidden>
+      <PastureScene overlay="soft" />
+      <div className="absolute inset-0 bg-creme/55" />
+    </div>
+  );
+}
+
 interface CowProps {
   x: number;
   y: number;

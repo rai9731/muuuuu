@@ -43,7 +43,7 @@ export function DataTable<T>({ columns, rows, rowKey, loading, empty, actions, o
         <div className="scrollbar-thin overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-pasto/10 bg-white/40 text-xs uppercase tracking-wide text-grafite/60">
+              <tr className="border-b border-pasto/10 bg-pasto/5 text-xs uppercase tracking-wider text-pasto">
                 {columns.map((c) => (
                   <th key={c.key} scope="col" className={`px-4 py-3 font-semibold ${c.className ?? ''}`}>
                     {c.header}
@@ -57,7 +57,7 @@ export function DataTable<T>({ columns, rows, rowKey, loading, empty, actions, o
                 <tr
                   key={rowKey(row)}
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
-                  className={`border-b border-pasto/5 transition last:border-0 hover:bg-white/50 ${onRowClick ? 'cursor-pointer' : ''}`}
+                  className={`border-b border-pasto/5 transition last:border-0 hover:bg-trigo/10 ${onRowClick ? 'cursor-pointer' : ''}`}
                 >
                   {columns.map((c) => (
                     <td key={c.key} className={`px-4 py-3 align-middle ${c.className ?? ''}`}>

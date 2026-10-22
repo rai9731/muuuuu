@@ -262,10 +262,10 @@ interface StatCardProps {
 }
 
 const STAT_TONES = {
-  pasto: 'bg-pasto/12 text-pasto',
-  folha: 'bg-folha/15 text-folha',
-  trigo: 'bg-trigo/20 text-[#8a6119]',
-  terra: 'bg-terra/15 text-terra',
+  pasto: 'from-pasto to-folha text-white',
+  folha: 'from-folha to-[#6b9e68] text-white',
+  trigo: 'from-trigo to-trigo-dark text-white',
+  terra: 'from-terra to-[#a47148] text-white',
 };
 
 export function StatCard({ label, value, icon, hint, tone = 'pasto' }: StatCardProps) {
@@ -274,10 +274,10 @@ export function StatCard({ label, value, icon, hint, tone = 'pasto' }: StatCardP
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-medium text-grafite/70">{label}</p>
-          <p className="mt-2 truncate text-2xl font-bold text-grafite">{value}</p>
+          <p className="mt-2 truncate text-3xl font-extrabold tracking-tight text-grafite">{value}</p>
           {hint && <p className="mt-1 text-xs text-grafite/60">{hint}</p>}
         </div>
-        <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${STAT_TONES[tone]}`}>{icon}</span>
+        <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br shadow-md ${STAT_TONES[tone]}`}>{icon}</span>
       </div>
     </GlassCard>
   );

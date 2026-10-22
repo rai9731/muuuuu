@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { adminService } from '@services/adminService';
 import { useAsync } from '@hooks/useAsync';
 import { ErrorState, GlassCard, PageHeader, Skeleton, StatCard } from '@components/ui/Display';
+import { ChartCard, DonutChart, GroupedBars, NoData, TrendChart } from '@components/admin/charts';
 import { Input } from '@components/ui/Field';
 import { formatCurrency } from '@utils/format';
 
@@ -25,22 +25,19 @@ export default function AdminReports() {
             <StatCard label="Vendas" value={data.summary.sales} icon="#" tone="terra" />
             <StatCard label="Ticket médio" value={formatCurrency(data.summary.average_ticket)} icon="Ø" tone="trigo" />
           </div>
-          <GlassCard>
-            <h2 className="mb-3 font-bold">Receita e comissões por mês</h2>
-            {data.by_period.length ? (
-              <div className="h-72">
-                <ResponsiveContainer>
-                  <BarChart data={data.by_period}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="label" fontSize={12} /><YAxis fontSize={12} />
-                    <Tooltip formatter={(v) => formatCurrency(Number(v))} />
-                    <Bar dataKey="total" name="Receita" fill="#2f6b3a" radius={[6, 6, 0, 0]} />
-                    <Bar dataKey="commissions" name="Comissões" fill="#d9a441" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            ) : <p className="text-sm text-grafite/60">Sem dados no período.</p>}
-          </GlassCard>
+          <div className="grid gap-4 xl:grid-cols-3">
+            <ChartCard className="xl:col-span-2" title="Receita e comissões por mês">
+              {data.by_period.length
+                ? <GroupedBars data={data.by_period} series={[{ key: 'total', name: 'Receita', color: '#2f5d3a' }, { key: 'commissions', name: 'Comissões', color: '#d9a441' }]} />
+                : <NoData />}
+            </ChartCard>
+            <ChartCard title="Raças mais vendidas">
+              {data.top_breeds.length ? <DonutChart data={data.top_breeds.slice(0, 6)} nameKey="breed" valueKey="count" centerLabel="vendas" /> : <NoData />}
+            </ChartCard>
+          </div>
+          <ChartCard title="Evolução das vendas" subtitle="Receita (área) e nº de vendas (linha)">
+            {data.by_period.length ? <TrendChart data={data.by_period} area={{ key: 'total', name: 'Receita' }} line={{ key: 'count', name: 'Vendas' }} height={240} /> : <NoData />}
+          </ChartCard>
           <div className="grid gap-4 lg:grid-cols-2">
             <GlassCard>
               <h2 className="mb-2 font-bold">Maiores vendedores</h2>
