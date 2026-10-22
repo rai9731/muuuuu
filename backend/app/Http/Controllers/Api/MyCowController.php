@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Cow;
 use App\Models\CowMedia;
+use App\Services\Notifier;
 use App\Support\Presenter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -30,6 +31,7 @@ class MyCowController extends Controller
         $cow = $request->user()->cows()->make($data);
         $cow->forceFill(['status' => 'pending'])->save();
         $this->saveMedia($request, $cow);
+        Notifier::admins('new_cow', 'Novo anúncio para análise', $cow->title, ['cow_id' => $cow->id, 'image_url' => Presenter::url($cow->media()->where('type', 'photo')->first()?->path)]);
 
         return response()->json(['data' => Presenter::cowDetail($this->fresh($cow), $request->user()), 'message' => 'Anúncio enviado para análise. Você será avisado quando for publicado.'], 201);
     }

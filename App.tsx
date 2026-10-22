@@ -11,9 +11,6 @@ import { PublicHeader } from '@components/layout/PublicHeader';
 import { Footer } from '@components/layout/Footer';
 import { LinkButton } from '@components/ui/Button';
 
-// Fora do fluxo principal (ainda não implementados)
-const ComingSoon = lazy(() => import('@pages/ComingSoon'));
-
 // Público
 const Landing = lazy(() => import('@pages/Landing'));
 const Login = lazy(() => import('@pages/auth/Login'));
@@ -36,13 +33,13 @@ const Checkout = lazy(() => import('@pages/user/Checkout'));
 const MyPurchases = lazy(() => import('@pages/user/MyPurchases'));
 const PurchaseDetail = lazy(() => import('@pages/user/PurchaseDetail'));
 const MySales = lazy(() => import('@pages/user/MySales'));
-const Messages = ComingSoon;
-const Notifications = ComingSoon;
+const Messages = lazy(() => import('@pages/user/Messages'));
+const Notifications = lazy(() => import('@pages/user/Notifications'));
 const Profile = lazy(() => import('@pages/user/Profile'));
 
 // Admin
 const AdminDashboard = lazy(() => import('@pages/admin/AdminDashboard'));
-const AdminNotifications = ComingSoon;
+const AdminNotifications = lazy(() => import('@pages/admin/AdminNotifications'));
 const AdminListings = lazy(() => import('@pages/admin/AdminListings'));
 const AdminUsers = lazy(() => import('@pages/admin/AdminUsers'));
 const AdminUserDetail = lazy(() => import('@pages/admin/AdminUserDetail'));

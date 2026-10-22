@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Cow;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Models\Conversation;
+use App\Services\Notifier;
 use App\Support\Presenter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -75,6 +77,8 @@ class OrderController extends Controller
             return $order;
         });
 
+        Notifier::to($order->seller_id, 'sale_made', 'Você recebeu um pedido', $order->cow->title.' · #'.$order->code, ['order_id' => $order->id]);
+
         return response()->json(['data' => Presenter::order($this->load($order), true), 'message' => 'Pedido criado!'], 201);
     }
 
@@ -103,6 +107,9 @@ class OrderController extends Controller
             $order->payment?->update(['status' => 'approved', 'paid_at' => now()]);
         });
 
+        Notifier::to($order->buyer_id, 'payment_confirmed', 'Pagamento confirmado', '#'.$order->code, ['order_id' => $order->id]);
+        Notifier::to($order->seller_id, 'payment_confirmed', 'Pagamento confirmado — envie o animal', '#'.$order->code, ['order_id' => $order->id]);
+
         return ['data' => Presenter::order($this->load($order), true), 'message' => 'Pagamento aprovado (simulado).'];
     }
 
@@ -111,6 +118,8 @@ class OrderController extends Controller
         $order = $this->mine($request, $id, 'seller_id');
         abort_unless($order->status === 'paid', 422, 'O pagamento ainda não foi confirmado.');
         $order->update(['status' => 'in_transit', 'shipped_at' => now()]);
+
+        Notifier::to($order->buyer_id, 'order_update', 'Seu animal está a caminho', '#'.$order->code, ['order_id' => $order->id]);
 
         return ['data' => Presenter::order($this->load($order), true), 'message' => 'Envio registrado.'];
     }
@@ -124,6 +133,9 @@ class OrderController extends Controller
             $order->update(['status' => 'delivered', 'delivered_at' => now(), 'payout_status' => 'paid', 'payout_at' => now()]);
             $order->cow->forceFill(['status' => 'sold'])->save();
         });
+
+        Notifier::to($order->seller_id, 'sale_completed', 'Venda concluída', '#'.$order->code.' · repasse liberado', ['order_id' => $order->id]);
+        Notifier::admins('sale_completed', 'Venda concluída', '#'.$order->code, ['order_id' => $order->id]);
 
         return ['data' => Presenter::order($this->load($order), true), 'message' => 'Entrega confirmada. Obrigado!'];
     }

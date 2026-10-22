@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Rules\ValidDocument;
 use App\Support\Document;
+use App\Services\Notifier;
 use App\Support\Presenter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -40,6 +41,8 @@ class AuthController extends Controller
             'terms_accepted_at' => now(),
             'last_login_at' => now(),
         ]);
+
+        Notifier::admins('new_user', 'Novo usuário cadastrado', $user->name, ['user_id' => $user->id]);
 
         return response()->json(['token' => $this->token($user, true), 'user' => Presenter::user($user)], 201);
     }

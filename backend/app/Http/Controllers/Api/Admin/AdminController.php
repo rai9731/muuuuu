@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\Payment;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Notifier;
 use App\Support\Presenter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -89,7 +90,9 @@ class AdminController extends Controller
 
     public function approveCow(int $id)
     {
-        Cow::findOrFail($id)->forceFill(['status' => 'active', 'rejection_reason' => null, 'published_at' => now()])->save();
+        $cow = Cow::findOrFail($id);
+        $cow->forceFill(['status' => 'active', 'rejection_reason' => null, 'published_at' => now()])->save();
+        Notifier::to($cow->user_id, 'cow_approved', 'Seu anúncio foi aprovado', $cow->title, ['cow_id' => $cow->id]);
 
         return ['message' => 'Anúncio aprovado e publicado.'];
     }
@@ -97,7 +100,9 @@ class AdminController extends Controller
     public function rejectCow(Request $request, int $id)
     {
         $reason = $request->validate(['reason' => ['required', 'string', 'max:500']])['reason'];
-        Cow::findOrFail($id)->forceFill(['status' => 'rejected', 'rejection_reason' => $reason])->save();
+        $cow = Cow::findOrFail($id);
+        $cow->forceFill(['status' => 'rejected', 'rejection_reason' => $reason])->save();
+        Notifier::to($cow->user_id, 'cow_rejected', 'Seu anúncio precisa de ajustes', $reason, ['cow_id' => $cow->id]);
 
         return ['message' => 'Anúncio recusado.'];
     }

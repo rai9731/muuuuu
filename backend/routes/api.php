@@ -6,6 +6,8 @@ use App\Http\Controllers\Api\MyCowController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PublicController;
 use App\Http\Controllers\Api\Admin\AdminController;
+use App\Http\Controllers\Api\ConversationController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ProfileController;
 use Illuminate\Support\Facades\Route;
 
@@ -24,7 +26,15 @@ Route::get('/cows/{id}', [CowController::class, 'show'])->whereNumber('id');
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
-    Route::get('/unread-counts', [PublicController::class, 'unreadCounts']);
+    Route::get('/unread-counts', [NotificationController::class, 'unreadCounts']);
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::get('/notifications/since', [NotificationController::class, 'since']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
+    Route::get('/conversations', [ConversationController::class, 'index']);
+    Route::post('/conversations', [ConversationController::class, 'store']);
+    Route::get('/conversations/{id}', [ConversationController::class, 'show']);
+    Route::post('/conversations/{id}/messages', [ConversationController::class, 'send']);
 
     Route::post('/cows/{id}/favorite', [CowController::class, 'toggleFavorite']);
     Route::get('/favorites', [CowController::class, 'favorites']);

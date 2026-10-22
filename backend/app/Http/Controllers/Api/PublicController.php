@@ -56,10 +56,4 @@ class PublicController extends Controller
             'featured' => $featured->map(fn ($c) => Presenter::cow($c))->all(),
         ]];
     }
-
-    /** Contadores do sino/mensagens (módulos fora do fluxo principal). */
-    public function unreadCounts()
-    {
-        return ['data' => ['notifications' => 0, 'messages' => 0, 'latest_notification_id' => null]];
-    }
 }

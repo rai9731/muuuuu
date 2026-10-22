@@ -136,7 +136,7 @@ class Presenter
             'cow' => self::cow($o->cow), 'buyer' => self::person($o->buyer), 'seller' => self::person($o->seller),
             'payment' => self::payment($o->payment),
             'review' => $o->review ? ['rating' => $o->review->rating, 'comment' => $o->review->comment, 'created_at' => $o->review->created_at->toIso8601String()] : null,
-            'conversation_id' => null,
+            'conversation_id' => \App\Models\Conversation::where('cow_id', $o->cow_id)->where('buyer_id', $o->buyer_id)->value('id'),
         ];
         if ($detail) {
             $step = fn (string $s, string $label, $date, bool $done) => ['status' => $s, 'label' => $label, 'date' => $date?->toIso8601String(), 'done' => $done];
