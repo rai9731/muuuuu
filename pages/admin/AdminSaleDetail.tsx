@@ -3,7 +3,8 @@ import { adminService } from '@services/adminService';
 import { useAsync } from '@hooks/useAsync';
 import { ErrorState, GlassCard, PageHeader, Skeleton, StatusBadge } from '@components/ui/Display';
 import { Timeline } from '@components/ui/Timeline';
-import { DELIVERY_METHODS, ORDER_STATUS, PAYMENT_METHODS, PAYMENT_STATUS, PAYOUT_STATUS } from '@utils/constants';
+import { OrderStatusBadge, PaymentStatusBadge } from '@components/ui/OrderStatusBadge';
+import { DELIVERY_METHODS, PAYMENT_METHODS, PAYOUT_STATUS } from '@utils/constants';
 import { formatCurrency, formatDateTime } from '@utils/format';
 
 export default function AdminSaleDetail() {
@@ -19,7 +20,7 @@ export default function AdminSaleDetail() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title={`Pedido #${o.code}`} description={formatDateTime(o.created_at)} actions={<StatusBadge map={ORDER_STATUS} value={o.status} />} />
+      <PageHeader title={`Pedido #${o.code}`} description={formatDateTime(o.created_at)} actions={<OrderStatusBadge order={o} />} />
       <div className="grid gap-4 lg:grid-cols-2">
         <GlassCard>
           <h2 className="mb-2 font-bold">Resumo</h2>
@@ -40,7 +41,7 @@ export default function AdminSaleDetail() {
           {o.payment ? (
             <dl className="divide-y divide-pasto/10">
               {row('Forma', PAYMENT_METHODS[o.payment.method])}
-              {row('Status', <StatusBadge map={PAYMENT_STATUS} value={o.payment.status} />)}
+              {row('Status', <PaymentStatusBadge payment={o.payment} />)}
               {row('Valor', formatCurrency(o.payment.amount))}
               {row('Pago em', o.payment.paid_at ? formatDateTime(o.payment.paid_at) : '—')}
             </dl>

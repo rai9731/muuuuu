@@ -8,14 +8,15 @@ import { useAsync } from '@hooks/useAsync';
 import { useToast } from '@hooks/useToast';
 import { Button } from '@components/ui/Button';
 import { ConfirmDialog } from '@components/ui/ConfirmDialog';
-import { Avatar, ErrorState, GlassCard, Skeleton, StatusBadge } from '@components/ui/Display';
+import { Avatar, ErrorState, GlassCard, Skeleton } from '@components/ui/Display';
 import { Textarea } from '@components/ui/Field';
 import { Modal } from '@components/ui/Modal';
 import { RatingStars } from '@components/ui/RatingStars';
 import { PaymentJourney } from '@components/ui/PaymentJourney';
 import { Timeline } from '@components/ui/Timeline';
 import { CowPlaceholder } from '@components/cow/CowPlaceholder';
-import { DELIVERY_METHODS, ORDER_STATUS, PAYMENT_METHODS, PAYMENT_STATUS } from '@utils/constants';
+import { OrderStatusBadge, PaymentStatusBadge } from '@components/ui/OrderStatusBadge';
+import { DELIVERY_METHODS, PAYMENT_METHODS } from '@utils/constants';
 import { formatCurrency, formatDate, formatDateTime } from '@utils/format';
 
 export default function PurchaseDetail() {
@@ -102,7 +103,7 @@ export default function PurchaseDetail() {
     try {
       const res = await orderService.checkPayment(order!.id);
       setData(res.data);
-      if (res.check.result === 'confirmed') toast.success('Pagamento confirmado', res.check.message);
+      if (res.check.result === 'confirmed') toast.success(res.check.simulated ? 'Confirmação simulada' : 'Pagamento confirmado', res.check.message);
       else if (res.check.result === 'pending') toast.info('Ainda não confirmado', res.check.message);
       else toast.warning('Conferência sem confirmação', res.check.message);
     } catch (err) {
@@ -145,7 +146,7 @@ export default function PurchaseDetail() {
           <h2 className="text-2xl font-bold">Pedido #{order.code}</h2>
           <p className="text-sm text-grafite/65">Realizado em {formatDateTime(order.created_at)}</p>
         </div>
-        <StatusBadge map={ORDER_STATUS} value={order.status} />
+        <OrderStatusBadge order={order} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
@@ -157,7 +158,7 @@ export default function PurchaseDetail() {
                   {payment.method === 'pix' ? <QrCode className="h-5 w-5 text-pasto" /> : payment.method === 'boleto' ? <Barcode className="h-5 w-5 text-pasto" /> : <CreditCard className="h-5 w-5 text-pasto" />}
                   Pagamento via {PAYMENT_METHODS[payment.method]}
                 </h3>
-                <StatusBadge map={PAYMENT_STATUS} value={payment.status} />
+                <PaymentStatusBadge payment={payment} />
               </div>
 
               {order.journey && (
@@ -257,9 +258,8 @@ export default function PurchaseDetail() {
               </div>
             </div>
             <dl className="mt-5 space-y-2 border-t border-pasto/10 pt-4 text-sm">
-              <div className="flex justify-between"><dt className="text-grafite/70">Valor</dt><dd>{formatCurrency(order.price)}</dd></div>
-              <div className="flex justify-between"><dt className="text-grafite/70">Taxa da plataforma</dt><dd className="text-grafite/60">incluída</dd></div>
-              <div className="flex justify-between text-base"><dt className="font-semibold">Total</dt><dd className="font-bold text-pasto">{formatCurrency(order.total)}</dd></div>
+              <div className="flex justify-between"><dt className="text-grafite/70">Preço do anúncio</dt><dd>{formatCurrency(order.price)}</dd></div>
+              <div className="flex justify-between text-base"><dt className="font-semibold">Você paga</dt><dd className="font-bold text-pasto">{formatCurrency(order.total)}</dd></div>
             </dl>
           </GlassCard>
 

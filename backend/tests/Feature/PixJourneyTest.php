@@ -136,8 +136,8 @@ class PixJourneyTest extends TestCase
         $this->assertSame($b->id, $ob['cow']['id']);
         $this->assertSame(3900.0, (float) $oa['price']);
         $this->assertSame(12500.0, (float) $ob['price']);
-        $this->assertEqualsWithDelta(3900 * 1.05, $oa['payment']['amount'], 0.001);
-        $this->assertEqualsWithDelta(12500 * 1.05, $ob['payment']['amount'], 0.001);
+        $this->assertEqualsWithDelta(3900, $oa['payment']['amount'], 0.001);
+        $this->assertEqualsWithDelta(12500, $ob['payment']['amount'], 0.001);
         $this->assertNotSame($oa['payment']['pix_payload'], $ob['payment']['pix_payload']);
         // Pix da cobrança correspondente: o payload carrega a referência do PRÓPRIO pedido.
         $this->assertStringContainsString($oa['code'], $oa['payment']['pix_payload']);
@@ -151,7 +151,7 @@ class PixJourneyTest extends TestCase
         $data = $this->buy($cow, ['price' => 1, 'total' => 1, 'amount' => 1, 'cow_id' => 999, 'payment' => ['amount' => 1]])->assertCreated()->json('data');
 
         $this->assertSame(3900.0, (float) $data['price']);
-        $this->assertEqualsWithDelta(4095.0, $data['payment']['amount'], 0.001);
+        $this->assertEqualsWithDelta(3900.0, $data['payment']['amount'], 0.001);
         $this->assertSame($cow->id, $data['cow']['id']);
     }
 
@@ -363,6 +363,76 @@ class PixJourneyTest extends TestCase
         $fake->b['override'] = null;
 
         $this->assertSame('confirmed', $this->check($order['id'])->json('check.result'));
+    }
+
+    // ───────────── regra A: preço anunciado = total pago; comissão sai do repasse ─────────────
+
+    public function test_regra_a_comprador_paga_o_preco_anunciado_e_comissao_reduz_o_repasse(): void
+    {
+        $cow = $this->cow('Novilha Nelore PO', 3900);
+        Sanctum::actingAs($this->buyer);
+
+        $preview = $this->getJson("/api/checkout/{$cow->id}")->assertOk()->json('data');
+        $this->assertEqualsWithDelta(3900, $preview['price'], 0.001);
+        $this->assertEqualsWithDelta(3900, $preview['total'], 0.001);
+        $this->assertEqualsWithDelta(195, $preview['platform_fee'], 0.001);
+        $this->assertEqualsWithDelta(3705, $preview['seller_amount'], 0.001);
+
+        $order = $this->buy($cow)->assertCreated()->json('data');
+        foreach (['price' => 3900, 'total' => 3900, 'platform_fee' => 195, 'seller_amount' => 3705] as $k => $v) {
+            $this->assertEqualsWithDelta($v, $order[$k], 0.001, $k);
+        }
+        $this->assertEqualsWithDelta(3900, $order['payment']['amount'], 0.001);
+        $this->assertEqualsWithDelta(5.0, $order['commission_percent'], 0.001);
+        $this->assertEqualsWithDelta($cow->price, $order['total'], 0.001); // vitrine = checkout
+    }
+
+    // ───────────── confirmação simulada: mensagens, avisos e receita ─────────────
+
+    public function test_confirmacao_simulada_e_rotulada_e_nao_instrui_envio_nem_vira_receita(): void
+    {
+        $this->cow('Outra', 1000); // ruído
+        $order = $this->buy($this->cow('Novilha Nelore PO', 3900))->json('data');
+        $this->postJson("/api/my/purchases/{$order['id']}/simulate-payment")->assertOk();
+
+        $res = $this->check($order['id'])->assertOk()->json();
+
+        $this->assertSame('confirmed', $res['check']['result']);
+        $this->assertTrue($res['check']['simulated']);
+        $this->assertStringContainsString('SIMULADA', $res['check']['message']);
+        $this->assertStringContainsString('SIMULADO', collect($res['data']['timeline'])->firstWhere('status', 'paid')['label']);
+
+        $sellerNote = \App\Models\AppNotification::where('user_id', $this->seller->id)->where('type', 'payment_confirmed')->first();
+        $this->assertStringContainsString('SIMULADO', $sellerNote->title);
+        $this->assertStringContainsString('não envie o animal', $sellerNote->title); // nunca "Pagamento confirmado — envie o animal"
+        $buyerNote = \App\Models\AppNotification::where('user_id', $this->buyer->id)->where('type', 'payment_confirmed')->first();
+        $this->assertStringContainsString('SIMULADA', $buyerNote->title);
+
+        // Painel do vendedor e do admin: simulação não é receita nem comissão reais.
+        Sanctum::actingAs($this->seller);
+        $this->assertEqualsWithDelta(0, $this->getJson('/api/dashboard')->json('data.stats.total_sold'), 0.001);
+        $admin = $this->person('admin@teste.local');
+        $admin->forceFill(['role' => 'admin'])->save();
+        Sanctum::actingAs($admin);
+        $k = $this->getJson('/api/admin/dashboard')->assertOk()->json('data.kpis');
+        $this->assertEqualsWithDelta(0, $k['revenue'], 0.001);
+        $this->assertEqualsWithDelta(0, $k['commissions'], 0.001);
+        $this->assertEqualsWithDelta(0, $this->getJson('/api/admin/reports')->assertOk()->json('data.summary.revenue'), 0.001);
+    }
+
+    public function test_pagamento_nao_simulado_continua_contando_como_receita(): void
+    {
+        $order = $this->buy($this->cow('Novilha Nelore PO', 3900))->json('data');
+        Payment::query()->update(['gateway' => 'asaas']); // marca como não simulado só para exercitar o filtro (nenhuma chamada externa)
+        Order::whereKey($order['id'])->update(['status' => 'paid', 'paid_at' => now()]);
+        $admin = $this->person('admin@teste.local');
+        $admin->forceFill(['role' => 'admin'])->save();
+        Sanctum::actingAs($admin);
+
+        $k = $this->getJson('/api/admin/dashboard')->assertOk()->json('data.kpis');
+
+        $this->assertEqualsWithDelta(3900, $k['revenue'], 0.001);
+        $this->assertEqualsWithDelta(195, $k['commissions'], 0.001);
     }
 
     // ───────────── autorização e gateway padrão ─────────────

@@ -29,7 +29,34 @@ Testes: `backend/tests/Feature/PixJourneyTest.php`.
 ## Não feito (fora da Entrega 01)
 Adaptador do Asaas (a troca é uma classe que implemente `PixGateway` + ramo no `AppServiceProvider`), webhook, expiração/cancelamento automático, cartão e boleto (removidos do checkout nesta jornada).
 
-## Pontos para o colega decidir
-1. O checkout mostra "você não paga nada a mais", mas `total = preço + comissão` e é esse valor que a cobrança usa. Mantive o comportamento existente.
+## Pontos para o colega revisar
+1. Regra de preço e comissão: ver "Regra de preço e comissão (opção A)" abaixo (a divergência inicial foi resolvida pelo responsável).
 2. O checkout já reservava o animal ao criar o pedido; mantido sem alteração.
 3. Cartão/boleto saíram da tela de checkout (a jornada é Pix); o código antigo de `simulate-payment` com confirmação direta foi substituído.
+
+---
+
+## Pacote de preparação da demonstração (27/10/2026)
+
+### Regra de preço e comissão (opção A, decidida pelo responsável)
+O preço do anúncio é o total que o comprador paga. A comissão existente (5%, `Setting::commission()`) não muda; ela é descontada do repasse. Fonte do preço: `cows.price` no banco, recalculado em `OrderController::amounts()`. Exemplo: anúncio R$ 3.900,00 → total R$ 3.900,00, comissão R$ 195,00, repasse R$ 3.705,00. Pedidos antigos (gravados com preço + comissão) não foram alterados.
+
+### Confirmação simulada
+Mensagem do backend, toast, selos (pedido e pagamento), Timeline e notificações dizem "SIMULADO/SIMULADA". O aviso ao vendedor passa a "Pagamento SIMULADO — não envie o animal". Painel do vendedor (`total_sold`) e painel/relatórios do admin (receita e comissões) ignoram pedidos com pagamento simulado (`Order::excludingSimulated`).
+Correção colateral: `Payment` não tinha as relações `order`/`payer` usadas pelo painel admin (dava 500 com qualquer pagamento); foram adicionadas.
+
+### Testes isolados
+`phpunit.xml` força SQLite em memória e cache em array, e `tests/TestCase.php` força o mesmo antes de o Laravel ler o ambiente e **aborta** se a conexão não for SQLite em memória/temporário. Necessário porque o container exporta `DB_CONNECTION=mysql` e variáveis já exportadas vencem o `phpunit.xml`.
+
+### Como conferir o MySQL de desenvolvimento (somente leitura, feito por você)
+Nada foi consultado nem alterado pelo executor. Para conferir se os dados de demonstração existem e se a migração desta entrega foi aplicada, no cliente MySQL de sua preferência (porta 3307 do host), apenas com `SELECT`:
+- `SELECT COUNT(*) FROM users;` e `SELECT COUNT(*) FROM cows;` (esperado, com a demonstração: 3 usuários e 3 anúncios, além do que você criou)
+- `SELECT migration FROM migrations ORDER BY id DESC LIMIT 3;` (se aparecer `2026_10_27_100000_add_pix_journey_columns_to_payments`, a migração foi aplicada)
+Se faltar dado, preserve o estado e decida entre `php artisan db:seed` ou restauração de backup antes de agir.
+
+### Pendências (não corrigidas neste pacote)
+- **Pedidos antigos sem saída:** `Payment` pendente sem `gateway_id` (criado antes da migração) não pode ser conferido nem simulado. Sem migração de dados.
+- Baixa: conferências simultâneas podem devolver "pending" após outra já ter confirmado (estado correto); conferência em pedido cancelado devolve "pending".
+- Preexistente: não há expiração/cancelamento automático do pedido, e a reserva do animal não expira.
+- Fluxo preexistente: em pedido com pagamento simulado, o comprador ainda vê "Confirmar recebimento" e o vendedor "Marcar em transporte" (a tela do vendedor foi marcada como "Simulado: não enviar"); concluir a entrega marcaria o animal como vendido.
+- Sem teste concorrente, sem teste de frontend e sem teste de segundo comprador em animal reservado.

@@ -178,7 +178,7 @@ class Presenter
             $data['journey'] = self::journey($o);
             $data['timeline'] = [
                 $step('created', 'Pedido criado', $o->created_at, true),
-                $step('paid', 'Pagamento confirmado', $o->paid_at, $o->paid_at !== null),
+                $step('paid', $o->payment?->gateway === 'simulated' ? 'Pagamento confirmado (SIMULADO)' : 'Pagamento confirmado', $o->paid_at, $o->paid_at !== null),
                 $step('in_transit', 'Animal enviado', $o->shipped_at, $o->shipped_at !== null),
                 $step('delivered', 'Entrega confirmada', $o->delivered_at, $o->delivered_at !== null),
             ];

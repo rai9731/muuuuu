@@ -6,7 +6,8 @@ import { useAuth } from '@hooks/useAuth';
 import { LinkButton } from '@components/ui/Button';
 import { EmptyState, ErrorState, GlassCard, ListSkeleton, PageHeader, StatCard, StatusBadge } from '@components/ui/Display';
 import { CowPlaceholder } from '@components/cow/CowPlaceholder';
-import { COW_STATUS, ORDER_STATUS } from '@utils/constants';
+import { OrderStatusBadge } from '@components/ui/OrderStatusBadge';
+import { COW_STATUS } from '@utils/constants';
 import { formatCurrency, formatDate, formatNumber } from '@utils/format';
 
 export default function Dashboard() {
@@ -96,7 +97,7 @@ export default function Dashboard() {
                             <p className="truncate text-sm font-semibold">{order.cow.title}</p>
                             <p className="text-xs text-grafite/60">#{order.code} · {formatDate(order.created_at)} · {formatCurrency(order.total)}</p>
                           </div>
-                          <StatusBadge map={ORDER_STATUS} value={order.status} />
+                          <OrderStatusBadge order={order} />
                         </Link>
                       </li>
                     );

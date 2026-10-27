@@ -17,7 +17,7 @@ export const orderService = {
   review: (id: number, rating: number, comment: string) =>
     api.post<{ data: Order; message: string }>(`/my/purchases/${id}/review`, { rating, comment }),
   checkPayment: (id: number) =>
-    api.post<{ data: Order; check: { result: CheckResult; message: string } }>(`/my/purchases/${id}/check-payment`),
+    api.post<{ data: Order; check: { result: CheckResult; message: string; simulated: boolean } }>(`/my/purchases/${id}/check-payment`),
   simulatePayment: (id: number) => api.post<{ data: Order; message: string }>(`/my/purchases/${id}/simulate-payment`),
 
   // ─── Vendas ───

@@ -22,6 +22,12 @@ class Order extends Model
         ];
     }
 
+    /** Pedidos cujo pagamento NÃO é de gateway simulado (receita/comissão reais). */
+    public function scopeExcludingSimulated($query)
+    {
+        return $query->whereDoesntHave('payment', fn ($p) => $p->where('gateway', 'simulated'));
+    }
+
     public function cow()
     {
         return $this->belongsTo(Cow::class)->withTrashed();

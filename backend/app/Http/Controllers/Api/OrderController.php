@@ -19,6 +19,8 @@ class OrderController extends Controller
 {
     private const WITH = ['cow.breed', 'cow.media', 'buyer', 'seller', 'payment', 'review'];
 
+    private const SIMULATED_CONFIRMED = 'Confirmação SIMULADA (demonstração local): nenhum pagamento real foi feito nem observado no Asaas.';
+
     private const CHECK_MESSAGES = [
         'confirmed' => 'Pagamento conferido e confirmado.',
         'pending' => 'Ainda não há pagamento registrado para esta cobrança.',
@@ -39,7 +41,7 @@ class OrderController extends Controller
                 'cows_listed' => Cow::where('user_id', $u->id)->whereIn('status', ['active', 'paused', 'reserved'])->count(),
                 'cows_sold' => Order::where('seller_id', $u->id)->where('status', 'delivered')->count(),
                 'purchases' => Order::where('buyer_id', $u->id)->count(),
-                'total_sold' => (float) Order::where('seller_id', $u->id)->whereIn('status', ['paid', 'in_transit', 'delivered'])->sum('seller_amount'),
+                'total_sold' => (float) Order::where('seller_id', $u->id)->whereIn('status', ['paid', 'in_transit', 'delivered'])->excludingSimulated()->sum('seller_amount'),
             ],
             'latest_cows' => Cow::with(['breed', 'media'])->where('user_id', $u->id)->latest()->limit(4)->get()
                 ->map(fn ($c) => Presenter::cow($c))->all(),
@@ -141,10 +143,14 @@ class OrderController extends Controller
     {
         $order = $this->mine($request, $id, 'buyer_id');
         $result = $this->pix->check($order);
+        $simulated = $this->pix->gateway()->source() === 'simulation';
 
         return [
             'data' => Presenter::order($this->load($order), true),
-            'check' => ['result' => $result, 'message' => self::CHECK_MESSAGES[$result] ?? ''],
+            'check' => [
+                'result' => $result, 'simulated' => $simulated,
+                'message' => ($result === 'confirmed' && $simulated) ? self::SIMULATED_CONFIRMED : (self::CHECK_MESSAGES[$result] ?? ''),
+            ],
         ];
     }
 
@@ -218,9 +224,10 @@ class OrderController extends Controller
         $percent = \App\Models\Setting::commission();
         $fee = round($price * $percent / 100, 2);
 
+        // Regra A (decisão do responsável): o comprador paga o preço anunciado; a comissão sai do repasse ao vendedor.
         return [
             'price' => $price, 'platform_fee' => $fee, 'commission_percent' => $percent,
-            'total' => round($price + $fee, 2), 'seller_amount' => $price,
+            'total' => round($price, 2), 'seller_amount' => round($price - $fee, 2),
         ];
     }
 }

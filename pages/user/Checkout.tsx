@@ -122,14 +122,12 @@ export default function Checkout() {
           <GlassCard className="lg:sticky lg:top-24">
             <h2 className="font-semibold">Valores</h2>
             <dl className="mt-4 space-y-3 text-sm">
-              <div className="flex justify-between"><dt className="text-grafite/70">Valor da vaca</dt><dd className="font-semibold">{formatCurrency(data.price)}</dd></div>
-              <div className="flex justify-between">
-                <dt className="text-grafite/70">Taxa da plataforma ({formatNumber(data.commission_percent)}%)</dt>
-                <dd className="text-grafite/70">{formatCurrency(data.platform_fee)}</dd>
-              </div>
-              <p className="text-xs text-grafite/55">A taxa é descontada do repasse ao vendedor — você não paga nada a mais.</p>
+              <div className="flex justify-between"><dt className="text-grafite/70">Preço do anúncio</dt><dd className="font-semibold">{formatCurrency(data.price)}</dd></div>
+              <p className="text-xs text-grafite/55">
+                A taxa da plataforma ({formatNumber(data.commission_percent)}%) é descontada do repasse ao vendedor — você paga exatamente o preço do anúncio.
+              </p>
               <div className="flex justify-between border-t border-pasto/10 pt-3 text-base">
-                <dt className="font-semibold">Total</dt>
+                <dt className="font-semibold">Total a pagar</dt>
                 <dd className="text-2xl font-bold text-pasto">{formatCurrency(data.total)}</dd>
               </div>
             </dl>

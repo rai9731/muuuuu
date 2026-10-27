@@ -12,7 +12,8 @@ import { Button, LinkButton } from '@components/ui/Button';
 import { ConfirmDialog } from '@components/ui/ConfirmDialog';
 import { DataTable, type Column } from '@components/ui/DataTable';
 import { Avatar, EmptyState, ErrorState, GlassCard, PageHeader, Pagination, StatusBadge, Tabs } from '@components/ui/Display';
-import { ORDER_STATUS, PAYMENT_STATUS, PAYOUT_STATUS } from '@utils/constants';
+import { OrderStatusBadge, PaymentStatusBadge } from '@components/ui/OrderStatusBadge';
+import { PAYOUT_STATUS } from '@utils/constants';
 import { formatCurrency, formatDate } from '@utils/format';
 
 const TABS = [
@@ -72,9 +73,9 @@ export default function MySales() {
     { key: 'cow', header: 'Vaca', render: (o) => <span className="line-clamp-1">{o.cow.title}</span> },
     { key: 'value', header: 'Valor', render: (o) => <span className="font-semibold">{formatCurrency(o.price)}</span> },
     { key: 'net', header: 'Você recebe', render: (o) => formatCurrency(o.seller_amount), hideOnMobile: true },
-    { key: 'payment', header: 'Pagamento', render: (o) => (o.payment ? <StatusBadge map={PAYMENT_STATUS} value={o.payment.status} /> : '—') },
+    { key: 'payment', header: 'Pagamento', render: (o) => (o.payment ? <PaymentStatusBadge payment={o.payment} /> : '—') },
     { key: 'payout', header: 'Repasse', render: (o) => <StatusBadge map={PAYOUT_STATUS} value={o.payout_status} /> },
-    { key: 'status', header: 'Pedido', render: (o) => <StatusBadge map={ORDER_STATUS} value={o.status} /> },
+    { key: 'status', header: 'Pedido', render: (o) => <OrderStatusBadge order={o} /> },
   ];
 
   return (
@@ -98,7 +99,10 @@ export default function MySales() {
             loading={loading}
             actions={(o) => (
               <>
-                {o.status === 'paid' && (
+                {o.status === 'paid' && o.payment?.simulated && (
+                  <span className="text-xs font-semibold text-grafite/60">Simulado: não enviar</span>
+                )}
+                {o.status === 'paid' && !o.payment?.simulated && (
                   <Button size="sm" variant="outline" icon={<Truck className="h-4 w-4" />} onClick={() => setShipping(o)}>Marcar em transporte</Button>
                 )}
                 <Button size="sm" variant="ghost" icon={<MessageCircle className="h-4 w-4" />} onClick={() => openChat(o)} aria-label="Conversar com o comprador">

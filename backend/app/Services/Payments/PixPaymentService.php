@@ -173,9 +173,14 @@ class PixPaymentService
             return false;
         }
 
-        $tag = $this->gateway->source() === 'simulation' ? ' (simulado)' : '';
-        Notifier::to($order->buyer_id, 'payment_confirmed', 'Pagamento confirmado'.$tag, '#'.$order->code, ['order_id' => $order->id]);
-        Notifier::to($order->seller_id, 'payment_confirmed', 'Pagamento confirmado'.$tag.' — envie o animal', '#'.$order->code, ['order_id' => $order->id]);
+        if ($this->gateway->source() === 'simulation') {
+            $note = '#'.$order->code.' · demonstração local, nenhum pagamento real';
+            Notifier::to($order->buyer_id, 'payment_confirmed', 'Confirmação SIMULADA do pagamento', $note, ['order_id' => $order->id, 'simulated' => true]);
+            Notifier::to($order->seller_id, 'payment_confirmed', 'Pagamento SIMULADO — não envie o animal', $note, ['order_id' => $order->id, 'simulated' => true]);
+        } else {
+            Notifier::to($order->buyer_id, 'payment_confirmed', 'Pagamento confirmado', '#'.$order->code, ['order_id' => $order->id]);
+            Notifier::to($order->seller_id, 'payment_confirmed', 'Pagamento confirmado — envie o animal', '#'.$order->code, ['order_id' => $order->id]);
+        }
 
         return true;
     }

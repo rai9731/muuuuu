@@ -5,8 +5,9 @@ import type { Order } from '@services/types';
 import { useAsync } from '@hooks/useAsync';
 import { LinkButton } from '@components/ui/Button';
 import { DataTable, type Column } from '@components/ui/DataTable';
-import { EmptyState, ErrorState, GlassCard, PageHeader, Pagination, StatusBadge, Tabs } from '@components/ui/Display';
+import { EmptyState, ErrorState, GlassCard, PageHeader, Pagination, Tabs } from '@components/ui/Display';
 import { CowPlaceholder } from '@components/cow/CowPlaceholder';
+import { OrderStatusBadge } from '@components/ui/OrderStatusBadge';
 import { ORDER_STATUS, PAYMENT_METHODS } from '@utils/constants';
 import { formatCurrency, formatDate } from '@utils/format';
 
@@ -42,7 +43,7 @@ export default function MyPurchases() {
     { key: 'date', header: 'Data', render: (o) => formatDate(o.created_at) },
     { key: 'payment', header: 'Pagamento', render: (o) => (o.payment ? PAYMENT_METHODS[o.payment.method] : '—'), hideOnMobile: true },
     { key: 'total', header: 'Total', render: (o) => <span className="font-semibold">{formatCurrency(o.total)}</span> },
-    { key: 'status', header: 'Status', render: (o) => <StatusBadge map={ORDER_STATUS} value={o.status} /> },
+    { key: 'status', header: 'Status', render: (o) => <OrderStatusBadge order={o} /> },
   ];
 
   return (
