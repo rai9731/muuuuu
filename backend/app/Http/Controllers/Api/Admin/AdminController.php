@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Breed;
 use App\Models\Cow;
+use App\Models\PasswordResetRequest;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\Setting;
@@ -148,7 +149,7 @@ class AdminController extends Controller
             'purchases' => Order::with(self::ORDER_WITH)->where('buyer_id', $u->id)->latest()->limit(20)->get()->map(fn ($o) => Presenter::order($o)),
             'sales' => Order::with(self::ORDER_WITH)->where('seller_id', $u->id)->latest()->limit(20)->get()->map(fn ($o) => Presenter::order($o)),
             'payments' => Payment::with(['order.cow', 'order.seller', 'payer'])->where('payer_id', $u->id)->latest()->limit(20)->get()->map(fn ($p) => $this->payment($p)),
-            'password_requests' => [],
+            'password_requests' => PasswordResetRequest::where('user_id', $u->id)->latest()->limit(10)->get()->map(fn ($r) => $this->passwordRequest($r)),
         ]];
     }
 
@@ -174,13 +175,27 @@ class AdminController extends Controller
         $user = User::where('role', 'user')->findOrFail($id);
         $user->forceFill(['password' => $data['password'], 'must_change_password' => true])->save();
         $user->tokens()->delete();
+        PasswordResetRequest::where('user_id', $user->id)->where('status', 'pending')
+            ->update(['status' => 'resolved', 'resolved_by' => $request->user()->id, 'resolved_at' => now()]);
 
         return ['message' => 'Senha provisória definida. O usuário deverá trocá-la no próximo acesso.'];
     }
 
-    public function passwordRequests()
+    public function passwordRequests(Request $request)
     {
-        return ['data' => [], 'meta' => ['current_page' => 1, 'last_page' => 1, 'per_page' => 15, 'total' => 0]];
+        $q = PasswordResetRequest::with('user:id,name')->latest();
+        $request->filled('status') && $q->where('status', $request->query('status'));
+
+        return Presenter::page($q->paginate(15), fn ($r) => $this->passwordRequest($r));
+    }
+
+    private function passwordRequest(PasswordResetRequest $r): array
+    {
+        return [
+            'id' => $r->id, 'email' => $r->email, 'status' => $r->status,
+            'user' => $r->user ? ['id' => $r->user->id, 'name' => $r->user->name] : null,
+            'created_at' => $r->created_at->toIso8601String(), 'resolved_at' => $r->resolved_at?->toIso8601String(),
+        ];
     }
 
     // ─── Vendas e pagamentos ───

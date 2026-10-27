@@ -22,7 +22,7 @@ class PublicController extends Controller
                 ['role' => 'seller', 'label' => 'Vendedor', 'email' => $demo['seller_email'], 'password' => $demo['password']],
                 ['role' => 'buyer', 'label' => 'Comprador', 'email' => $demo['buyer_email'], 'password' => $demo['password']],
             ] : [],
-            'google_enabled' => false,
+            'google_enabled' => \App\Http\Controllers\GoogleAuthController::enabled(),
             'payment_methods' => \App\Models\Setting::read('payment_methods', ['pix', 'credit_card', 'boleto']),
             'commission_percent' => \App\Models\Setting::commission(),
             'upload_max_size_mb' => config('boinarede.uploads.max_size_mb'),

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\PasswordResetRequest;
 use App\Models\User;
 use App\Rules\ValidDocument;
 use App\Support\Document;
@@ -69,6 +70,22 @@ class AuthController extends Controller
             'token' => $this->token($user, (bool) ($data['remember'] ?? false)),
             'user' => Presenter::user($user),
         ]);
+    }
+
+    /** Sem e-mail (RN09): o pedido vira um aviso para o administrador. A resposta é sempre a mesma. */
+    public function forgotPassword(Request $request)
+    {
+        $data = $request->validate(['email' => ['required', 'email', 'max:190']]);
+
+        $user = User::where('email', $data['email'])->where('role', 'user')->first();
+        $already = PasswordResetRequest::where('email', $data['email'])->where('status', 'pending')->exists();
+
+        if ($user && ! $already) {
+            PasswordResetRequest::create(['user_id' => $user->id, 'email' => $data['email'], 'ip_address' => $request->ip()]);
+            Notifier::admins('password_reset', 'Pedido de redefinição de senha', $user->name.' · '.$user->email, ['user_id' => $user->id]);
+        }
+
+        return ['message' => 'Pedido registrado.'];
     }
 
     public function me(Request $request)
