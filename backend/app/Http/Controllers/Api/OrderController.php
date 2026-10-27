@@ -21,6 +21,8 @@ class OrderController extends Controller
 
     private const SIMULATED_CONFIRMED = 'Confirmação SIMULADA (demonstração local): nenhum pagamento real foi feito nem observado no Asaas.';
 
+    private const SIMULATED_BLOCK = 'Pagamento simulado (demonstração): este pedido não avança para envio ou entrega.';
+
     private const CHECK_MESSAGES = [
         'confirmed' => 'Pagamento conferido e confirmado.',
         'pending' => 'Ainda não há pagamento registrado para esta cobrança.',
@@ -157,6 +159,7 @@ class OrderController extends Controller
     public function ship(Request $request, int $id)
     {
         $order = $this->mine($request, $id, 'seller_id');
+        abort_if($order->hasSimulatedPayment(), 422, self::SIMULATED_BLOCK);
         abort_unless($order->status === 'paid', 422, 'O pagamento ainda não foi confirmado.');
         $order->update(['status' => 'in_transit', 'shipped_at' => now()]);
 
@@ -168,6 +171,7 @@ class OrderController extends Controller
     public function confirmDelivery(Request $request, int $id)
     {
         $order = $this->mine($request, $id, 'buyer_id');
+        abort_if($order->hasSimulatedPayment(), 422, self::SIMULATED_BLOCK);
         abort_unless($order->status === 'in_transit', 422, 'O animal ainda não foi enviado.');
 
         DB::transaction(function () use ($order) {

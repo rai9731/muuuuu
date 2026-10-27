@@ -66,3 +66,10 @@ Se faltar dado, preserve o estado e decida entre `php artisan db:seed` ou restau
 - **Pagamento simulado e animal (efeito atual, sem regra nova):** o comprador só confirma recebimento com o pedido em `in_transit`, e só o vendedor leva um pedido de `paid` a `in_transit`. Um pedido simulado pode, portanto, chegar a `delivered` e marcar o animal como `sold` se o vendedor clicar em "Marcar em transporte" e o comprador confirmar o recebimento. Fora da demonstração: esse caminho não é exercitado. Proposta de proteção (NÃO implementada, aguarda decisão): recusar `ship` (422) quando o pagamento é simulado e ocultar os botões de envio e de recebimento nesses pedidos. Efeito: o pedido simulado fica em `paid` e o animal em `reserved`; como a reserva não expira, o anúncio continua fora da vitrine até alguém liberá-lo. Isso exigiria uma segunda decisão (cancelar o pedido simulado / liberar a reserva).
 - **MySQL de desenvolvimento:** possível uso anterior pelos testes das etapas anteriores **não confirmado**. Nada foi consultado nem alterado.
 - **Fotos da demonstração anterior:** alteração **não verificada**. Evidência apenas observada (sem restaurar nada): os 3 arquivos em `backend/storage/app/public/cows/{1,2,3}/` têm data de modificação 27/10/2026 18:44 (as pastas, 16:00) e conteúdo idêntico (SHA-256) ao das fontes em `backend/database/seeders/images/`.
+
+### Bloqueio de envio/entrega para pagamento simulado (27/10/2026, decisão do responsável)
+- Backend: `ship` e `confirm-delivery` recusam (422) pedidos cujo pagamento é simulado (`Order::hasSimulatedPayment`). Interface: botões "Marcar em transporte" e "Confirmar recebimento" ocultos nesses pedidos, com aviso.
+- **Efeito aceito:** o pedido demonstrativo permanece `paid` e o animal `reserved`; não há cancelamento, expiração nem liberação automática da reserva (não implementados).
+- Testes novos: envio e entrega recusados e animal inalterado; pedido com gateway não simulado continua podendo ser enviado.
+- Suíte nativa após o ajuste: `OK (27 tests, 139 assertions)` (antes do ajuste: 25 testes, 126 asserções).
+- A demonstração para em "Pagamento confirmado (simulado)", em banco isolado.

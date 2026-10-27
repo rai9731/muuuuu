@@ -227,8 +227,13 @@ export default function PurchaseDetail() {
           <GlassCard>
             <h3 className="mb-5 font-semibold">Acompanhamento</h3>
             {order.timeline && <Timeline events={order.timeline} />}
+            {payment?.simulated && order.status === 'paid' && (
+              <p className="mt-4 rounded-xl bg-trigo/15 p-3 text-xs text-grafite/80">
+                Pedido de demonstração: com pagamento simulado, o pedido não avança para envio nem entrega.
+              </p>
+            )}
             <div className="mt-6 flex flex-wrap gap-2">
-              {['paid', 'in_transit'].includes(order.status) && (
+              {['paid', 'in_transit'].includes(order.status) && !payment?.simulated && (
                 <Button icon={<PackageCheck className="h-4 w-4" />} onClick={() => setConfirmOpen(true)}>Confirmar recebimento</Button>
               )}
               {order.status === 'delivered' && !order.review && (

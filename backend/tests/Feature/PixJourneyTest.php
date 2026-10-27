@@ -435,6 +435,43 @@ class PixJourneyTest extends TestCase
         $this->assertEqualsWithDelta(195, $k['commissions'], 0.001);
     }
 
+    // ───────────── pedido simulado não avança para envio nem entrega ─────────────
+
+    public function test_pedido_simulado_nao_pode_ser_enviado_nem_entregue_e_o_animal_nao_muda(): void
+    {
+        $cow = $this->cow('Novilha Nelore PO', 3900);
+        $order = $this->buy($cow)->json('data');
+        $this->postJson("/api/my/purchases/{$order['id']}/simulate-payment")->assertOk();
+        $this->check($order['id'])->assertOk()->assertJsonPath('check.result', 'confirmed');
+
+        // Vendedor: envio recusado.
+        Sanctum::actingAs($this->seller);
+        $this->postJson("/api/my/sales/{$order['id']}/ship")->assertStatus(422)->assertJsonPath('message', fn ($m) => str_contains($m, 'simulado'));
+
+        // Comprador: entrega recusada (mesmo se o pedido fosse forçado a in_transit por dado inconsistente).
+        Sanctum::actingAs($this->buyer);
+        $this->postJson("/api/my/purchases/{$order['id']}/confirm-delivery")->assertStatus(422);
+        Order::whereKey($order['id'])->update(['status' => 'in_transit']);
+        $this->postJson("/api/my/purchases/{$order['id']}/confirm-delivery")->assertStatus(422);
+        Order::whereKey($order['id'])->update(['status' => 'paid']);
+
+        $fresh = Order::find($order['id']);
+        $this->assertSame('paid', $fresh->status);
+        $this->assertNull($fresh->shipped_at);
+        $this->assertNull($fresh->delivered_at);
+        $this->assertSame('reserved', $cow->fresh()->status);
+    }
+
+    public function test_pedido_com_gateway_real_continua_podendo_ser_enviado(): void
+    {
+        $order = $this->buy($this->cow('Novilha Nelore PO', 3900))->json('data');
+        Payment::query()->update(['gateway' => 'asaas']); // só para exercitar a regra; nenhuma chamada externa
+        Order::whereKey($order['id'])->update(['status' => 'paid', 'paid_at' => now()]);
+        Sanctum::actingAs($this->seller);
+
+        $this->postJson("/api/my/sales/{$order['id']}/ship")->assertOk()->assertJsonPath('data.status', 'in_transit');
+    }
+
     // ───────────── autorização e gateway padrão ─────────────
 
     public function test_outro_usuario_nao_confere_nem_simula_o_pedido_alheio(): void

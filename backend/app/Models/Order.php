@@ -22,6 +22,12 @@ class Order extends Model
         ];
     }
 
+    /** Pagamento de demonstração (gateway simulado): não pode avançar para envio nem entrega. */
+    public function hasSimulatedPayment(): bool
+    {
+        return $this->payment?->gateway === 'simulated';
+    }
+
     /** Pedidos cujo pagamento NÃO é de gateway simulado (receita/comissão reais). */
     public function scopeExcludingSimulated($query)
     {
