@@ -79,3 +79,11 @@ Se faltar dado, preserve o estado e decida entre `php artisan db:seed` ou restau
 - **PHPUnit nativo no commit atual (cc1d4dd):** `OK (27 tests, 139 assertions)`, segundo o executor. A linha de base de e21151a era 25 testes e 126 asserções.
 - **Não verificados:** a apresentação visual da tela do vendedor e as partes do painel administrativo que não foram examinadas (lista de Pagamentos, lista e detalhe de Vendas e a leitura dos valores na tela). Só os totais de receita e comissão do admin e o `total_sold` do vendedor têm teste.
 - **Isolamento da demonstração:** o isolamento do MySQL foi por configuração (SQLite em `/tmp`, `DB_HOST` vazio); a rede `bridge` padrão não prova bloqueio de acesso externo. Não houve chamada externa observada, mas a execução não deve ser classificada como totalmente isolada da rede.
+
+### Aprovação da regra de preço A pelo responsável pelo Boi na Rede (27/10/2026)
+- **Decisão:** em 27/10/2026, o responsável pelo Boi na Rede aprovou a regra de preço A, conforme informado por Rogers. Antes disso, a regra constava apenas como decisão de Rogers para este protótipo.
+  - O preço exibido na vitrine é o total pago pelo comprador.
+  - A comissão de 5% é descontada do repasse ao vendedor.
+  - Exemplo (anúncio de R$ 3.900,00): o comprador paga R$ 3.900,00, a comissão é R$ 195,00 e o vendedor recebe R$ 3.705,00.
+- **Correspondência com o código (conferida por leitura do commit 085ca41, sem rodar testes):** `OrderController::amounts()` calcula `fee = round(preço × comissão / 100, 2)`, `total = preço` e `seller_amount = preço − fee`, e o checkout grava `orders.total`, `orders.seller_amount` e `payments.amount` (igual ao total) a partir desses valores. O preço vem de `cows.price` no banco. A comissão (`Setting::commission()`, padrão 5 em `PLATFORM_COMMISSION_PERCENT`) não foi alterada. O texto do checkout informa que a taxa é descontada do repasse. O teste `test_regra_a_comprador_paga_o_preco_anunciado_e_comissao_reduz_o_repasse` verifica os valores 3900 / 3900 / 195 / 3705 (resultado relatado anteriormente, não reexecutado nesta etapa).
+- **Escopo da aprovação:** a regra vale para pedidos novos; pedidos antigos continuam com o valor gravado na época. A aprovação não implica validação no Asaas Sandbox nem prontidão para produção.
