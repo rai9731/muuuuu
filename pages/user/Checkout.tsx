@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Barcode, CreditCard, Lock, MapPin, QrCode, ShieldCheck, Truck, Warehouse } from 'lucide-react';
+import { Lock, MapPin, QrCode, ShieldCheck, Truck, Warehouse } from 'lucide-react';
 import { orderService } from '@services/orderService';
 import { ApiError, errorMessage } from '@services/api';
 import type { DeliveryMethod, PaymentMethod } from '@services/types';
@@ -13,9 +13,7 @@ import { CowPlaceholder } from '@components/cow/CowPlaceholder';
 import { formatAge, formatCurrency, formatNumber, formatWeight } from '@utils/format';
 
 const PAYMENT_OPTIONS: { value: PaymentMethod; label: string; description: string; icon: typeof QrCode }[] = [
-  { value: 'pix', label: 'Pix', description: 'Aprovação na hora com QR Code ou copia e cola.', icon: QrCode },
-  { value: 'credit_card', label: 'Cartão de crédito', description: 'Você digita os dados no ambiente seguro do Asaas.', icon: CreditCard },
-  { value: 'boleto', label: 'Boleto', description: 'Compensação em até 3 dias úteis.', icon: Barcode },
+  { value: 'pix', label: 'Pix', description: 'Código Pix copia e cola; depois você confere o pagamento no pedido.', icon: QrCode },
 ];
 
 const DELIVERY_OPTIONS: { value: DeliveryMethod; label: string; description: string; icon: typeof Truck }[] = [
@@ -114,7 +112,7 @@ export default function Checkout() {
             <RadioCards name="payment" value={payment} onChange={(v) => setPayment(v as PaymentMethod)} options={methods} />
             {data.simulated_gateway && (
               <p className="mt-4 rounded-xl bg-trigo/15 p-3 text-xs text-grafite/80">
-                Ambiente de demonstração: o Asaas ainda não está configurado, então a cobrança é simulada e pode ser confirmada no detalhe do pedido.
+                Ambiente de demonstração: a cobrança é SIMULADA (não passa pelo Asaas). A confirmação só acontece quando você conferir o pagamento no pedido.
               </p>
             )}
           </GlassCard>

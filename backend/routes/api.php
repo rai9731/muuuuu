@@ -52,6 +52,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/my/purchases', [OrderController::class, 'purchases']);
     Route::get('/my/purchases/{id}', [OrderController::class, 'purchase']);
     Route::post('/my/purchases/{id}/simulate-payment', [OrderController::class, 'simulatePayment']);
+    Route::post('/my/purchases/{id}/check-payment', [OrderController::class, 'checkPayment'])->middleware('throttle:20,1');
     Route::post('/my/purchases/{id}/confirm-delivery', [OrderController::class, 'confirmDelivery']);
     Route::post('/my/purchases/{id}/review', [OrderController::class, 'review']);
     Route::get('/my/sales', [OrderController::class, 'sales']);

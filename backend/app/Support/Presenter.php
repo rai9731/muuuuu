@@ -117,10 +117,45 @@ class Presenter
 
         return [
             'id' => $p->id, 'method' => $p->method, 'status' => $p->status, 'amount' => $p->amount,
-            'due_date' => $p->due_date?->toDateString(), 'pix_payload' => $p->pix_payload,
-            'pix_qr_image' => $p->pix_qr_image, 'boleto_url' => $p->boleto_url, 'invoice_url' => $p->invoice_url,
+            'due_date' => $p->due_date?->toDateString(),
+            // Pix só é exibido enquanto a cobrança existe e aguarda pagamento (sempre a cobrança deste pedido).
+            'pix_payload' => $p->status === 'pending' ? $p->pix_payload : null,
+            'pix_qr_image' => $p->status === 'pending' ? $p->pix_qr_image : null,
+            'gateway_status' => $p->gateway_status, 'last_check_result' => $p->last_check_result,
+            'last_checked_at' => $p->last_checked_at?->toIso8601String(), 'confirmation_source' => $p->confirmation_source, 'boleto_url' => $p->boleto_url, 'invoice_url' => $p->invoice_url,
             'paid_at' => $p->paid_at?->toIso8601String(), 'refunded_at' => $p->refunded_at?->toIso8601String(),
             'simulated' => $p->gateway === 'simulated', 'created_at' => $p->created_at->toIso8601String(),
+        ];
+    }
+
+    /** Etapas da jornada de pagamento Pix, derivadas só do que está gravado (sem afirmar o que não foi conferido). */
+    public static function journey(Order $o): array
+    {
+        $p = $o->payment;
+        $paid = $p?->status === 'approved';
+        $st = $p?->status;
+        $step = fn (string $key, string $label, string $state, ?string $note = null) => compact('key', 'label', 'state', 'note');
+
+        $charge = match (true) {
+            $paid || $p?->gateway_id !== null => $step('charge', 'Cobrança criada', 'done'),
+            $st === 'uncertain' => $step('charge', 'Cobrança: resultado incerto', 'warning', 'Não sabemos se a cobrança foi criada. Confira antes de qualquer nova tentativa.'),
+            $st === 'divergent' => $step('charge', 'Cobrança divergente', 'warning', 'A cobrança encontrada não corresponde ao pedido.'),
+            default => $step('charge', 'Cobrança preparada', 'current', 'A cobrança ainda não foi criada.'),
+        };
+        $awaiting = match (true) {
+            $paid => $step('awaiting', 'Aguardando pagamento', 'done'),
+            $st === 'pending' => $step('awaiting', 'Aguardando pagamento', 'current', 'Use o Pix abaixo e depois clique em "Conferir pagamento".'),
+            $st === 'divergent' && $p->gateway_id => $step('awaiting', 'Aguardando pagamento', 'warning', 'Divergência na última conferência; nada foi confirmado.'),
+            default => $step('awaiting', 'Aguardando pagamento', 'todo'),
+        };
+        $note = $paid ? ($p->confirmation_source === 'simulation' ? 'Confirmação SIMULADA (gateway de demonstração), não é pagamento real.' : 'Confirmado pelo gateway após validação de cobrança, pedido e valor.') : null;
+
+        return [
+            $step('order', 'Venda registrada', 'done', '#'.$o->code),
+            $charge,
+            $awaiting,
+            $step('checking', 'Conferindo pagamento', $paid ? 'done' : 'todo', $paid ? null : 'Acontece quando você clica em "Conferir pagamento".'),
+            $step('confirmed', 'Pagamento confirmado', $paid ? 'done' : 'todo', $note),
         ];
     }
 
@@ -140,6 +175,7 @@ class Presenter
         ];
         if ($detail) {
             $step = fn (string $s, string $label, $date, bool $done) => ['status' => $s, 'label' => $label, 'date' => $date?->toIso8601String(), 'done' => $done];
+            $data['journey'] = self::journey($o);
             $data['timeline'] = [
                 $step('created', 'Pedido criado', $o->created_at, true),
                 $step('paid', 'Pagamento confirmado', $o->paid_at, $o->paid_at !== null),

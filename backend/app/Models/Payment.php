@@ -13,6 +13,6 @@ class Payment extends Model
 
     protected function casts(): array
     {
-        return ['amount' => 'float', 'due_date' => 'date', 'paid_at' => 'datetime', 'refunded_at' => 'datetime'];
+        return ['amount' => 'float', 'due_date' => 'date', 'paid_at' => 'datetime', 'refunded_at' => 'datetime', 'last_checked_at' => 'datetime'];
     }
 }

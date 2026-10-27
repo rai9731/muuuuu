@@ -39,8 +39,12 @@ export const ORDER_STATUS: Record<string, LabelTone> = {
 };
 
 export const PAYMENT_STATUS: Record<string, LabelTone> = {
-  pending: { label: 'Pendente', tone: 'yellow' },
-  approved: { label: 'Aprovado', tone: 'green' },
+  preparing: { label: 'Preparando cobrança', tone: 'gray' },
+  creating: { label: 'Criando cobrança', tone: 'gray' },
+  uncertain: { label: 'Resultado incerto', tone: 'red' },
+  divergent: { label: 'Divergente', tone: 'red' },
+  pending: { label: 'Aguardando pagamento', tone: 'yellow' },
+  approved: { label: 'Confirmado', tone: 'green' },
   refused: { label: 'Recusado', tone: 'red' },
   refunded: { label: 'Estornado', tone: 'gray' },
 };

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Barcode, CheckCircle2, Copy, CreditCard, ExternalLink, MessageCircle, PackageCheck, QrCode, Star, Zap } from 'lucide-react';
+import { ArrowLeft, Barcode, CheckCircle2, Copy, CreditCard, ExternalLink, MessageCircle, PackageCheck, QrCode, RefreshCw, Star, Zap } from 'lucide-react';
 import { orderService } from '@services/orderService';
 import { messageService } from '@services/messageService';
 import { errorMessage } from '@services/api';
@@ -12,6 +12,7 @@ import { Avatar, ErrorState, GlassCard, Skeleton, StatusBadge } from '@component
 import { Textarea } from '@components/ui/Field';
 import { Modal } from '@components/ui/Modal';
 import { RatingStars } from '@components/ui/RatingStars';
+import { PaymentJourney } from '@components/ui/PaymentJourney';
 import { Timeline } from '@components/ui/Timeline';
 import { CowPlaceholder } from '@components/cow/CowPlaceholder';
 import { DELIVERY_METHODS, ORDER_STATUS, PAYMENT_METHODS, PAYMENT_STATUS } from '@utils/constants';
@@ -28,6 +29,7 @@ export default function PurchaseDetail() {
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
   const isNew = params.get('novo') === '1';
 
   const copyPix = async () => {
@@ -80,12 +82,13 @@ export default function PurchaseDetail() {
     }
   };
 
+  // Simula o pagamento no gateway de demonstração. Não confirma o pedido: quem confirma é a conferência.
   const simulate = async () => {
     setBusy(true);
     try {
       const res = await orderService.simulatePayment(order!.id);
       setData(res.data);
-      toast.success(res.message);
+      toast.info('Pagamento simulado', res.message);
     } catch (err) {
       toast.error('Não foi possível simular o pagamento', errorMessage(err));
     } finally {
@@ -93,11 +96,29 @@ export default function PurchaseDetail() {
     }
   };
 
+  // Conferência explícita: o servidor consulta o gateway e valida cobrança, valor e status antes de confirmar.
+  const check = async () => {
+    setChecking(true);
+    try {
+      const res = await orderService.checkPayment(order!.id);
+      setData(res.data);
+      if (res.check.result === 'confirmed') toast.success('Pagamento confirmado', res.check.message);
+      else if (res.check.result === 'pending') toast.info('Ainda não confirmado', res.check.message);
+      else toast.warning('Conferência sem confirmação', res.check.message);
+    } catch (err) {
+      toast.error('Não foi possível conferir o pagamento', errorMessage(err));
+    } finally {
+      setChecking(false);
+    }
+  };
+
   if (error) return <GlassCard><ErrorState message={error} onRetry={reload} /></GlassCard>;
   if (loading || !order) return <Skeleton className="h-[480px] rounded-3xl" />;
 
   const payment = order.payment;
-  const pending = order.status === 'awaiting_payment' && payment?.status === 'pending';
+  const awaiting = order.status === 'awaiting_payment';
+  const pending = awaiting && payment?.status === 'pending';
+  const canCheck = awaiting && !!payment;
 
   return (
     <div>
@@ -139,6 +160,23 @@ export default function PurchaseDetail() {
                 <StatusBadge map={PAYMENT_STATUS} value={payment.status} />
               </div>
 
+              {order.journey && (
+                <div className="mt-5 rounded-2xl bg-white/50 p-4">
+                  <PaymentJourney steps={order.journey} checking={checking} />
+                </div>
+              )}
+
+              {canCheck && (
+                <div className="mt-4">
+                  <Button variant="cta" icon={<RefreshCw className="h-4 w-4" />} onClick={check} loading={checking}>
+                    {payment?.status === 'preparing' ? 'Tentar preparar a cobrança' : 'Conferir pagamento'}
+                  </Button>
+                  <p className="mt-2 text-xs text-grafite/60">
+                    A conferência consulta a cobrança e só confirma se ela corresponder a este pedido e ao valor. Clicar aqui sem pagamento não confirma nada.
+                  </p>
+                </div>
+              )}
+
               {pending && (
                 <div className="mt-5">
                   {payment.method === 'pix' && (
@@ -168,15 +206,20 @@ export default function PurchaseDetail() {
                   {payment.due_date && <p className="mt-3 text-xs text-grafite/60">Vencimento: {formatDate(payment.due_date)}. Se não for pago, o pedido é cancelado e a vaca volta para a vitrine.</p>}
                   {payment.simulated && (
                     <div className="mt-4 rounded-2xl bg-trigo/15 p-4">
-                      <p className="text-sm text-grafite/80">Cobrança simulada (Asaas não configurado neste ambiente).</p>
-                      <Button className="mt-2" size="sm" variant="cta" icon={<Zap className="h-4 w-4" />} onClick={simulate} loading={busy}>
-                        Simular pagamento confirmado
+                      <p className="text-sm text-grafite/80">SIMULAÇÃO: esta cobrança existe só no gateway de demonstração. Nada foi cobrado nem pago no Asaas.</p>
+                      <Button className="mt-2" size="sm" variant="outline" icon={<Zap className="h-4 w-4" />} onClick={simulate} loading={busy}>
+                        Simular pagamento no gateway de demonstração
                       </Button>
+                      <p className="mt-2 text-xs text-grafite/65">Depois, clique em "Conferir pagamento" para que o sistema valide e confirme.</p>
                     </div>
                   )}
                 </div>
               )}
-              {payment.paid_at && <p className="mt-3 text-sm text-grafite/70">Pago em {formatDateTime(payment.paid_at)}</p>}
+              {payment.paid_at && (
+                <p className="mt-3 text-sm text-grafite/70">
+                  {payment.confirmation_source === 'simulation' ? 'Confirmação simulada em ' : 'Confirmado em '}{formatDateTime(payment.paid_at)}
+                </p>
+              )}
             </GlassCard>
           )}
 
