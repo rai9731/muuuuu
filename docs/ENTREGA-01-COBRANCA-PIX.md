@@ -58,7 +58,7 @@ Se faltar dado, preserve o estado e decida entre `php artisan db:seed` ou restau
 - **Pedidos antigos sem saída:** `Payment` pendente sem `gateway_id` (criado antes da migração) não pode ser conferido nem simulado. Sem migração de dados.
 - Baixa: conferências simultâneas podem devolver "pending" após outra já ter confirmado (estado correto); conferência em pedido cancelado devolve "pending".
 - Preexistente: não há expiração/cancelamento automático do pedido, e a reserva do animal não expira.
-- Fluxo preexistente: em pedido com pagamento simulado, o comprador ainda vê "Confirmar recebimento" e o vendedor "Marcar em transporte" (a tela do vendedor foi marcada como "Simulado: não enviar"); concluir a entrega marcaria o animal como vendido.
+- Fluxo preexistente, **parcialmente superado pelo commit cc1d4dd**: antes dele, um pedido com pagamento simulado podia ser enviado e entregue, o que marcaria o animal como vendido. **Superado (segundo os testes relatados):** o backend recusa `ship` e `confirm-delivery` (422) para pedidos com pagamento simulado e preserva o estado do pedido e do animal (pedido `paid`, `shipped_at` e `delivered_at` nulos, animal `reserved`). **Continua não verificado:** a apresentação visual das telas do comprador e do vendedor (inclusive se os botões "Confirmar recebimento" e "Marcar em transporte" estão ocultos ou substituídos como o código prevê) e as áreas administrativas que não foram examinadas.
 - Sem teste concorrente, sem teste de frontend e sem teste de segundo comprador em animal reservado.
 
 ### Conferência de fechamento (27/10/2026)
