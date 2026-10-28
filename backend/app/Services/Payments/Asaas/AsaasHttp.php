@@ -29,22 +29,15 @@ class AsaasHttp
     /**
      * @return array<string,mixed> corpo JSON decodificado (2xx)
      *
-     * @throws AsaasRefusedException    orçamento esgotado ou 4xx
-     * @throws AsaasTransportException  rede, timeout, redirecionamento, 5xx ou corpo inválido
+     * @throws AsaasRefusedException    nada foi enviado (orçamento esgotado/indisponível, operação ou caminho fora da lista)
+     * @throws AsaasTransportException  enviada, resultado incerto: rede, timeout, redirecionamento, 4xx, 5xx ou corpo inválido
      */
     public function send(string $op, string $method, string $path, array $query = [], ?array $json = null): array
     {
         in_array($op, AsaasConfig::OPERATIONS, true) || throw new AsaasRefusedException('Operação desconhecida.');
         preg_match(self::PATH, $path) === 1 || throw new AsaasRefusedException('Caminho não permitido.');
 
-        // Reserva atômica: incrementa primeiro e só então compara (duas requisições simultâneas não passam pelo mesmo saldo).
-        $key = "asaas:ledger:{$op}";
-        Cache::add($key, 0);
-        $used = (int) Cache::increment($key);
-        if ($used > $this->config->budget[$op]) {
-            Cache::decrement($key);
-            throw new AsaasRefusedException("Orçamento de requisições '{$op}' esgotado.");
-        }
+        $this->reserve($op);
 
         $options = array_filter(['query' => $query ?: null, 'json' => $json]);
         try {
@@ -69,11 +62,41 @@ class AsaasHttp
             throw new AsaasTransportException("Resposta {$status} do servidor.");
         }
         if ($status < 200 || $status >= 300) {
-            throw new AsaasRefusedException("Requisição recusada ({$status}).");
+            // Já foi enviada: sem contrato verificado, 4xx não prova que nada foi criado (resultado incerto).
+            throw new AsaasClientErrorException("Resposta {$status}: a requisição foi enviada e o resultado é tratado como incerto.");
         }
         $body = $response->json();
         is_array($body) || throw new AsaasTransportException('Resposta sem JSON válido.');
 
         return $body;
+    }
+
+    /**
+     * Reserva uma unidade do orçamento ANTES do envio: incrementa e só então compara. Falha fechado: erro do cache,
+     * retorno que não seja inteiro positivo ou estouro do teto => nenhuma requisição. Se a devolução da unidade
+     * falhar, o contador fica alto (erra para o lado seguro). Atomicidade entre processos depende do driver
+     * (AsaasConfig::ATOMIC_CACHE_DRIVERS); o contador vive no cache e `cache:clear` o zera.
+     *
+     * @throws AsaasRefusedException nada foi enviado
+     */
+    private function reserve(string $op): void
+    {
+        $key = "asaas:ledger:{$op}";
+        try {
+            Cache::add($key, 0);
+            $used = Cache::increment($key);
+        } catch (\Throwable) {
+            throw new AsaasRefusedException('Contador de orçamento indisponível; nada foi enviado.');
+        }
+        if (! is_int($used) || $used < 1) {
+            throw new AsaasRefusedException('Contador de orçamento inválido; nada foi enviado.');
+        }
+        if ($used > $this->config->budget[$op]) {
+            try {
+                Cache::decrement($key);
+            } catch (\Throwable) {
+            }
+            throw new AsaasRefusedException("Orçamento de requisições '{$op}' esgotado.");
+        }
     }
 }

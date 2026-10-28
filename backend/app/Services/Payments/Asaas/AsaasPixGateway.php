@@ -8,6 +8,7 @@ use App\Services\Payments\GatewayUncertain;
 use App\Services\Payments\PixCharge;
 use App\Services\Payments\PixGateway;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -54,6 +55,16 @@ class AsaasPixGateway implements PixGateway
 
         $customer = $this->customerId();
 
+        // Uma criação por recurso (defesa adicional à regra de incerteza): uma segunda tentativa para a mesma referência
+        // nunca envia outro POST, mesmo com orçamento sobrando. Só é liberada se NADA foi enviado (orçamento).
+        $guard = 'asaas:create-attempt:'.$reference;
+        try {
+            $first = Cache::add($guard, now()->toIso8601String());
+        } catch (\Throwable) {
+            throw new GatewayRejected('Controle de criação indisponível; nada foi enviado.');
+        }
+        $first || throw new GatewayUncertain('Já houve tentativa de criação desta cobrança; reconcilie, não recrie.');
+
         try {
             $body = $this->http->send('payment_create', 'POST', '/payments', [], [
                 'customer' => $customer, 'billingType' => 'PIX', 'value' => round($amount, 2),
@@ -61,8 +72,9 @@ class AsaasPixGateway implements PixGateway
                 'description' => 'Pedido de teste '.$reference,
             ]);
         } catch (AsaasRefusedException $e) {
+            Cache::forget($guard); // nada foi enviado
             throw new GatewayRejected($e->getMessage());
-        } catch (AsaasTransportException $e) {
+        } catch (AsaasTransportException $e) { // inclui 4xx: enviada, resultado incerto
             throw new GatewayUncertain($e->getMessage());
         }
 
@@ -146,9 +158,9 @@ class AsaasPixGateway implements PixGateway
                 'externalReference' => AsaasConfig::CUSTOMER_REFERENCE, 'notificationDisabled' => true,
             ]);
         } catch (AsaasRefusedException $e) {
-            $this->setCustomerState(null); // nenhuma criação ocorreu (orçamento ou 4xx)
+            $this->setCustomerState(null); // nada foi enviado (orçamento esgotado/indisponível)
             throw new GatewayRejected($e->getMessage());
-        } catch (AsaasTransportException $e) {
+        } catch (AsaasTransportException $e) { // inclui 4xx: enviada, resultado incerto
             $this->setCustomerState(['state' => 'uncertain']);
             throw new GatewayRejected('Resultado incerto na criação do cliente de teste; nenhuma cobrança enviada. '.$e->getMessage());
         }
@@ -197,18 +209,24 @@ class AsaasPixGateway implements PixGateway
                 $ids[] = $id;
             }
         }
-        if (count($ids) > 1) {
-            return 'ambiguous';
-        }
-        if (count($ids) === 0) {
+        // "não encontrado" SÓ para lista completa, válida e literalmente vazia. Qualquer item sem correspondência
+        // estrita (ex.: referência certa, nome ou documento divergente) ou mais de um candidato é ambíguo.
+        if ($body['data'] === []) {
             return 'not_found';
+        }
+        if (count($ids) !== 1 || count($body['data']) !== 1) {
+            return 'ambiguous';
         }
         $this->setCustomerState(['state' => 'ready', 'id' => $ids[0]]);
 
         return 'ready';
     }
 
-    /** Libera o estado incerto SOMENTE se a reconciliação acabou de concluir "not_found". Ação humana explícita. */
+    /**
+     * Libera o estado incerto SOMENTE se a listagem acabou de ser completa, válida e vazia ("not_found"). A listagem
+     * vazia não prova que não há criação ainda em andamento (ex.: estado `creating` de um processo vivo): quem executa
+     * precisa confirmar isso antes. Ação humana explícita.
+     */
     public function releaseUncertainCustomer(): bool
     {
         if ($this->reconcileCustomer() !== 'not_found') {

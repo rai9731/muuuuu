@@ -19,6 +19,12 @@ final class AsaasConfig
 
     public const CUSTOMER_REFERENCE = 'BNR-TEST-CUSTOMER';
 
+    /**
+     * Drivers de cache aceitos para o contador de orçamento (incremento atômico compartilhado entre processos).
+     * `array` e `file` não servem fora dos testes. O contador é cache: `cache:clear` o zera.
+     */
+    public const ATOMIC_CACHE_DRIVERS = ['database', 'redis', 'memcached'];
+
     /** @param array<string,int> $budget */
     private function __construct(
         public readonly string $url,
@@ -59,6 +65,11 @@ final class AsaasConfig
                 || $fail("orçamento de requisições '{$op}' não definido (use um inteiro; 0 bloqueia a operação).");
             $budget[$op] = (int) $v;
         }
+
+        $store = (string) config('cache.default');
+        $driver = (string) config("cache.stores.{$store}.driver");
+        (in_array($driver, self::ATOMIC_CACHE_DRIVERS, true) || app()->environment('testing'))
+            || $fail("o cache '{$store}' (driver '{$driver}') não garante contador atômico entre processos; use database, redis ou memcached.");
 
         $timeout = (int) ($c['timeout'] ?? 10);
         ($timeout >= 1 && $timeout <= 30) || $fail('timeout fora do intervalo de 1 a 30 s.');

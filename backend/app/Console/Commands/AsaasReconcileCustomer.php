@@ -26,6 +26,7 @@ class AsaasReconcileCustomer extends Command
 
         $this->line('Estado antes: '.$gateway->customerStatus());
         if ($this->option('release-if-not-found')) {
+            $this->warn('Só libere se tiver confirmado que nenhuma criação de cliente está em andamento (uma listagem vazia não prova isso).');
             $released = $gateway->releaseUncertainCustomer();
             $this->line($released ? 'Cliente não encontrado: estado liberado (nenhum cliente foi criado).' : 'Não liberado: a reconciliação não concluiu "não encontrado".');
         } else {

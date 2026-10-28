@@ -17,6 +17,7 @@ use App\Services\Payments\GatewayUncertain;
 use App\Services\Payments\PixGateway;
 use App\Services\Payments\PixPaymentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Laravel\Sanctum\Sanctum;
@@ -64,9 +65,9 @@ class AsaasSandboxAdapterTest extends TestCase
         return $g;
     }
 
-    private function create(?AsaasPixGateway $g = null, float $amount = 3900.0)
+    private function create(?AsaasPixGateway $g = null, float $amount = 3900.0, string $ref = self::REF)
     {
-        return ($g ?? $this->gw())->createPixCharge(self::REF, $amount, now()->addDays(3));
+        return ($g ?? $this->gw())->createPixCharge($ref, $amount, now()->addDays(3));
     }
 
     // ───────────── configuração: falha fechado ─────────────
@@ -216,26 +217,48 @@ class AsaasSandboxAdapterTest extends TestCase
         }
     }
 
-    public function test_erro_5xx_na_criacao_e_incerto_e_4xx_e_recusa_sem_vazar_o_corpo(): void
+    public static function respostasDeErroNaCriacao(): array
     {
-        $srv = AsaasFakeServer::install(['create' => '500']);
-        $this->configure(['budget' => ['payment_create' => 3]]);
-        try {
-            $this->create();
-            $this->fail('5xx deveria ser incerto.');
-        } catch (GatewayUncertain) {
-        }
-        $this->assertSame(1, $srv->count('POST', '/payments')); // sem retry automático
+        return ['5xx' => ['500'], '4xx' => ['422']];
+    }
 
-        $srv->b['create'] = '422';
+    #[DataProvider('respostasDeErroNaCriacao')]
+    public function test_erro_5xx_ou_4xx_na_criacao_e_incerto_e_nao_reabre_a_criacao(string $mode): void
+    {
+        $srv = AsaasFakeServer::install(['create' => $mode]);
+        $this->configure(['budget' => ['payment_create' => 3]]); // orçamento sobrando: não pode ser ele que impede o segundo POST
         try {
             $this->create();
-            $this->fail('4xx deveria ser recusa.');
-        } catch (GatewayRejected $e) {
+            $this->fail('Resposta de erro após o envio deve ser incerta.');
+        } catch (GatewayUncertain $e) {
             $this->assertStringNotContainsString('sk_secreta', $e->getMessage());
             $this->assertStringNotContainsString(self::FAKE_KEY, $e->getMessage());
         }
-        $this->assertSame(2, $srv->count('POST', '/payments'));
+        $this->assertSame(1, $srv->count('POST', '/payments'));
+
+        // Segunda tentativa para o mesmo recurso, mesmo com o servidor "corrigido": nenhum novo POST.
+        $srv->b['create'] = 'ok';
+        try {
+            $this->create();
+            $this->fail('A segunda criação deveria ser bloqueada.');
+        } catch (GatewayUncertain) {
+        }
+        $this->assertSame(1, $srv->count('POST', '/payments'));
+    }
+
+    public function test_orcamento_esgotado_na_criacao_nao_envia_e_libera_a_trava_de_criacao(): void
+    {
+        $srv = AsaasFakeServer::install();
+        $this->configure(['budget' => ['payment_create' => 0]]);
+        try {
+            $this->create();
+        } catch (GatewayRejected) {
+        }
+        $this->assertCount(0, $srv->log);
+
+        $this->configure(['budget' => ['payment_create' => 1]]); // nada havia sido enviado: pode criar
+        $this->create();
+        $this->assertSame(1, $srv->count('POST', '/payments'));
     }
 
     public static function respostasInvalidasNaCriacao(): array
@@ -283,7 +306,7 @@ class AsaasSandboxAdapterTest extends TestCase
         Http::fake(fn ($r) => $srv->handle($r));
         config(['services.asaas.budget.payment_create' => 3, 'services.asaas.budget.qr' => 5]);
         $this->app->forgetInstance(PixGateway::class);
-        $c2 = $this->create();
+        $c2 = $this->create(null, 3900.0, 'BNR-ABCDEFG2');
         $this->assertNull($c2->pixPayload);
         $this->assertNull($c2->pixQrImage);
     }
@@ -393,7 +416,7 @@ class AsaasSandboxAdapterTest extends TestCase
         $this->createCustomerConfig(['customer_create' => 1, 'customer_list' => 1, 'payment_create' => 3, 'qr' => 3, 'payment_get' => 3, 'payment_list' => 1]);
 
         $c = $this->create();
-        $this->create(null, 100.0);
+        $this->create(null, 100.0, 'BNR-ABCDEFG2');
 
         $this->assertSame(1, $srv->count('POST', '/customers'));
         $body = $srv->log[0]['body'];
@@ -436,14 +459,21 @@ class AsaasSandboxAdapterTest extends TestCase
         }
         $this->assertSame('uncertain', $this->gw()->customerStatus()); // pode ter sido criado
 
-        // 4xx: nenhuma criação ocorreu; o estado é limpo (uma nova tentativa explícita é possível).
+        // 4xx: sem contrato verificado não prova que nada foi criado => também incerto (não reabre a criação).
         Setting::write('asaas_sandbox_customer', null);
         $srv->b['customer_create'] = '422';
+        $posts = $srv->count('POST', '/customers');
         try {
             $this->create();
         } catch (GatewayRejected) {
         }
-        $this->assertSame('none', $this->gw()->customerStatus());
+        $this->assertSame('uncertain', $this->gw()->customerStatus());
+        $this->assertSame($posts + 1, $srv->count('POST', '/customers'));
+        try {
+            $this->create();
+        } catch (GatewayRejected) {
+        }
+        $this->assertSame($posts + 1, $srv->count('POST', '/customers')); // outra tentativa: nenhum novo POST
         $this->assertSame(0, $srv->count('POST', '/payments'));
     }
 
@@ -491,6 +521,42 @@ class AsaasSandboxAdapterTest extends TestCase
         $srv->customers = [];
         $this->assertTrue($this->gw()->releaseUncertainCustomer());
         $this->assertSame('none', $this->gw()->customerStatus());
+    }
+
+    public static function listasNaoVaziasSemCorrespondenciaEstrita(): array
+    {
+        $base = ['object' => 'customer', 'id' => 'cus_X', 'name' => 'Cliente de Teste Ficticio', 'cpfCnpj' => '00000000000', 'externalReference' => AsaasConfig::CUSTOMER_REFERENCE, 'deleted' => false];
+
+        return [
+            'referência certa, nome divergente' => [[array_replace($base, ['name' => 'Outro Nome'])]],
+            'referência certa, documento divergente' => [[array_replace($base, ['cpfCnpj' => '11111111111'])]],
+            'removido' => [[array_replace($base, ['deleted' => true])]],
+            'correspondente mais um item divergente' => [[$base, array_replace($base, ['id' => 'cus_Y', 'name' => 'Outro'])]],
+        ];
+    }
+
+    #[DataProvider('listasNaoVaziasSemCorrespondenciaEstrita')]
+    public function test_liberacao_so_com_lista_literalmente_vazia_nunca_com_item_divergente(array $items): void
+    {
+        $srv = AsaasFakeServer::install(['customer_create' => 'timeout_lost']);
+        $this->createCustomerConfig(['customer_create' => 2, 'customer_list' => 6, 'payment_create' => 2, 'qr' => 2]);
+        try {
+            $this->create();
+        } catch (GatewayRejected) {
+        }
+        $srv->customers = array_column($items, null, 'id');
+
+        $this->assertSame('ambiguous', $this->gw()->reconcileCustomer());
+        $this->assertFalse($this->gw()->releaseUncertainCustomer());
+        $this->assertSame('uncertain', $this->gw()->customerStatus());
+
+        $srv->customers = [];
+        $srv->b['customer_list_has_more'] = true; // vazia, mas incompleta: não libera
+        $this->assertFalse($this->gw()->releaseUncertainCustomer());
+        $this->assertSame('uncertain', $this->gw()->customerStatus());
+
+        $srv->b['customer_list_has_more'] = false;
+        $this->assertTrue($this->gw()->releaseUncertainCustomer()); // literalmente vazia e completa
     }
 
     public function test_comando_de_reconciliacao_so_le_e_exige_o_gateway_sandbox(): void
@@ -602,6 +668,137 @@ class AsaasSandboxAdapterTest extends TestCase
         $this->assertSame('not_applicable', $fresh->payout_status); // teste não gera repasse devido
         $this->assertNull($fresh->shipped_at);
         $this->assertNull($fresh->delivered_at);
+    }
+
+    public function test_erro_4xx_na_criacao_via_api_fica_incerto_e_outro_clique_nao_faz_novo_post(): void
+    {
+        [$srv, $order, , $buyer] = $this->journey(['create' => '422'], ['payment_create' => 5]);
+        $this->assertSame('uncertain', $order['payment']['status']);
+        $this->assertSame(1, $srv->count('POST', '/payments'));
+
+        $srv->b['create'] = 'ok'; // mesmo que o servidor volte a aceitar
+        $first = $this->check($order['id'], $buyer)->assertOk()->json();
+        $second = $this->check($order['id'], $buyer)->assertOk()->json();
+
+        $this->assertSame('not_found', $first['check']['result']);
+        $this->assertSame('not_found', $second['check']['result']);
+        $this->assertSame('uncertain', $second['data']['payment']['status']);
+        $this->assertSame(1, $srv->count('POST', '/payments')); // reconciliar só lê
+    }
+
+    public function test_erro_4xx_na_criacao_do_cliente_via_api_nao_reabre_a_criacao(): void
+    {
+        $srv = AsaasFakeServer::install(['customer_create' => '422']);
+        $this->createCustomerConfig(['customer_create' => 5, 'payment_create' => 5, 'payment_list' => 5]);
+        $seller = $this->person('vendedor@teste.local');
+        $buyer = $this->person('comprador@teste.local');
+        $cow = $seller->cows()->make(['title' => 'Novilha Nelore PO', 'breed_id' => Breed::create(['name' => 'Nelore'])->id, 'sex' => 'femea', 'age_months' => 24,
+            'weight_kg' => 390, 'purpose' => 'corte', 'price' => 3900, 'city' => 'Uberaba', 'state' => 'MG']);
+        $cow->forceFill(['status' => 'active', 'published_at' => now()])->save();
+        Sanctum::actingAs($buyer);
+        $order = $this->postJson("/api/checkout/{$cow->id}", ['payment_method' => 'pix', 'delivery_method' => 'pickup'])->assertCreated()->json('data');
+
+        $this->assertSame(1, $srv->count('POST', '/customers'));
+        $this->check($order['id'], $buyer);
+        $this->check($order['id'], $buyer);
+        $this->assertSame(1, $srv->count('POST', '/customers'));
+        $this->assertSame(0, $srv->count('POST', '/payments'));
+        $this->assertSame('uncertain', $this->gw()->customerStatus());
+    }
+
+    // ───────────── orçamento: reserva fail-closed e regressão da leitura-e-gravação ─────────────
+
+    public function test_reserva_do_orcamento_nao_depende_de_leitura_defasada(): void
+    {
+        // Simula outro processo: a LEITURA do contador devolve sempre 0 (defasada), mas o incremento é real.
+        // A implementação antiga (get + forever) nunca via o teto e enviava tudo; a atual reserva por incremento.
+        Cache::extend('defasado', fn () => Cache::repository(new class extends \Illuminate\Cache\ArrayStore {
+            private bool $defasado = true;
+
+            public function get($key)
+            {
+                return $this->defasado && str_starts_with($key, 'asaas:ledger:') ? 0 : parent::get($key);
+            }
+
+            public function increment($key, $value = 1)
+            {
+                $this->defasado = false; // o incremento é do "servidor" do cache e enxerga o valor real
+                try {
+                    return parent::increment($key, $value);
+                } finally {
+                    $this->defasado = true;
+                }
+            }
+        }));
+        config(['cache.stores.defasado' => ['driver' => 'defasado'], 'cache.default' => 'defasado']);
+        $srv = AsaasFakeServer::install();
+        $this->configure(['budget' => ['payment_get' => 2]]);
+        $c = $this->create();
+
+        $enviadas = 0;
+        for ($i = 0; $i < 6; $i++) {
+            try {
+                $this->gw()->getCharge($c->id);
+                $enviadas++;
+            } catch (GatewayUncertain) {
+            }
+        }
+
+        $this->assertSame(2, $enviadas);
+        $this->assertSame(2, $srv->count('GET', '/payments/'.$c->id) - $srv->count('GET', '/payments/'.$c->id.'/pixQrCode'));
+    }
+
+    public function test_falha_ou_retorno_invalido_do_cache_nao_envia_nada(): void
+    {
+        foreach (['excecao', 'falso'] as $modo) {
+            $driver = 'quebrado_'.$modo;
+            Cache::extend($driver, fn () => Cache::repository(new class($modo) extends \Illuminate\Cache\ArrayStore {
+                public function __construct(private string $modo)
+                {
+                    parent::__construct();
+                }
+
+                public function increment($key, $value = 1)
+                {
+                    if (str_starts_with($key, 'asaas:ledger:')) {
+                        return $this->modo === 'excecao' ? throw new \RuntimeException('cache fora do ar') : false;
+                    }
+
+                    return parent::increment($key, $value);
+                }
+            }));
+            config(['cache.stores.'.$driver => ['driver' => $driver], 'cache.default' => $driver]);
+            $srv = AsaasFakeServer::install();
+            $this->configure(['budget' => ['payment_create' => 5, 'payment_get' => 5]]);
+
+            try {
+                $this->create();
+                $this->fail('Sem contador confiável, nada pode ser enviado.');
+            } catch (GatewayRejected) {
+            }
+            $this->assertCount(0, $srv->log, $modo);
+        }
+    }
+
+    public function test_cache_sem_contador_atomico_entre_processos_nao_ativa_o_adaptador_fora_dos_testes(): void
+    {
+        Http::fake();
+        $this->configure();
+        AsaasConfig::fromConfig(); // em teste, o driver array é aceito
+
+        $this->app['env'] = 'production';
+        foreach (['array', 'file'] as $driver) {
+            config(['cache.default' => $driver, 'cache.stores.'.$driver.'.driver' => $driver]);
+            try {
+                AsaasConfig::fromConfig();
+                $this->fail("O driver {$driver} não deveria ser aceito.");
+            } catch (AsaasConfigurationException $e) {
+                $this->assertStringContainsString('atômico', $e->getMessage());
+            }
+        }
+        config(['cache.default' => 'database', 'cache.stores.database.driver' => 'database']);
+        $this->assertInstanceOf(AsaasConfig::class, AsaasConfig::fromConfig());
+        Http::assertNothingSent();
     }
 
     public function test_orcamento_esgotado_mantem_o_contador_no_limite(): void

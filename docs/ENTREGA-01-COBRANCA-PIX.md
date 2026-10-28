@@ -159,3 +159,17 @@ Escopo: revisão do código e dos testes da candidata (`77f18a4`, `6536cc7`) ant
 - Não executado: demonstração visual (exigiria subir servidor), teste concorrente real, contrato real do Asaas.
 
 **Premissas do contrato do Asaas continuam não verificadas** (ver seção do adaptador): campos e status das respostas, moeda, `cpfCnpj`, `limit` e `hasMore`.
+
+---
+
+## Rodada local após o parecer do auditor (27/10/2026): M1, M2, M3, B1
+
+**M1 — liberação do cliente de teste.** `--release-if-not-found` só libera após listagem completa (`hasMore=false`), válida e *literalmente vazia*. Lista não vazia sem correspondência estrita (referência certa com nome ou documento divergente, cliente removido, ou correspondente mais um item divergente) é `ambiguous`; nunca libera. Mesmo uma listagem vazia não prova que não há criação ainda em andamento (estado `creating` de um processo vivo): quem executa precisa confirmar isso antes; o comando avisa. Testes: 4 listas divergentes, lista vazia incompleta e lista vazia completa.
+
+**M2 — respostas 4xx.** O contrato do Asaas não foi verificado, então 4xx deixa de ser "recusa conclusiva": após o envio é resultado incerto (`AsaasClientErrorException`, subclasse de transporte). Só é "rejeição" (e só então a trava é liberada) quando nada foi enviado: orçamento esgotado ou indisponível. Cliente: 4xx => `uncertain`. Cobrança: 4xx => pedido `uncertain`, conferência só lê. Defesa adicional: uma tentativa de criação por referência (`asaas:create-attempt:{ref}` no cache); segundo POST para a mesma referência não é enviado mesmo com orçamento sobrando. Testes: 4xx/5xx não reabrem a criação (adaptador e API), cliente 4xx não gera novo POST, orçamento zero libera a trava. Não há exceção documentada para recusa conclusiva: seria preciso fundamento do contrato real.
+
+**M3 — orçamento.** A reserva falha fechada: exceção do cache, retorno não inteiro ou menor que 1 => nada é enviado. Se a devolução da unidade falhar, o contador fica alto (lado seguro). A ativação do adaptador exige cache `database`, `redis` ou `memcached` (`array`/`file` só em ambiente de teste). **Não comprovado:** a atomicidade entre processos desses drivers (depende do banco/servidor de cache; nenhum teste concorrente real foi feito, e o cache `array` não representa uma janela real). Condições a provar antes do Sandbox: driver escolhido, incremento atômico sob concorrência no ambiente real, e não executar `cache:clear` durante a janela (o contador é cache). Um processo que morra entre a reserva e o envio consome orçamento sem enviar (conservador).
+
+**B1 — regressão.** `test_reserva_do_orcamento_nao_depende_de_leitura_defasada` usa um cache cuja leitura é defasada (simula outro processo) e incremento real. Na versão de `6536cc7` (leitura e gravação separadas) o teste **falha**: 6 requisições enviadas em vez de 2 (`Failed asserting that 6 is identical to 2`); o teste sequencial anterior passava nas duas versões. Na versão atual passa. Demonstração feita trocando temporariamente o arquivo pela versão de `6536cc7` e restaurando-o.
+
+**Testes:** `vendor/bin/phpunit` (isolado pelo `TestCase`, SQLite em memória, HTTP falso): OK (101 tests, 532 assertions). Limites: o `AsaasFakeServer` segue com contrato presumido; sem teste concorrente real; telas não verificadas visualmente.
