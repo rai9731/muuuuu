@@ -136,3 +136,26 @@ Caminho feliz com cliente pré-criado: 1 `payment_create` + 1 `qr` + 2 `payment_
 - `tsc --noEmit` e `eslint`: sem erros. Build do frontend (`vite build` para pasta temporária): concluído.
 - Descoberta de ambiente: o container recebe `ASAAS_*` preenchidas via `env_file: .env` do Compose (valores não lidos nem exibidos). Os testes agora as zeram em `TestCase::createApplication` e bloqueiam qualquer requisição HTTP sem fake (`Http::preventStrayRequests`); um teste confirma que `services.asaas.*` fica vazio nos testes. Execuções anteriores de testes podem ter carregado essas variáveis na memória do processo (sem nenhum código que as usasse). Demonstrações feitas com `docker compose run` herdaram as variáveis no ambiente do container.
 - Limitações: sem teste de tela (nenhuma tela aberta), sem teste concorrente e sem contrato real do Asaas.
+
+---
+
+## Revisão local da candidata do adaptador (27/10/2026, commit 5f249da)
+
+Escopo: revisão do código e dos testes da candidata (`77f18a4`, `6536cc7`) antes de qualquer janela externa. Sem rede, credencial, `.env`, Asaas, Sandbox ou webhook.
+
+**Defeitos corrigidos**
+- O contador de orçamento (`AsaasHttp`) lia e gravava em passos separados: duas requisições simultâneas podiam passar pelo mesmo saldo. Agora a reserva é atômica (incrementa e só então compara; ao estourar, devolve a unidade e recusa).
+- Pagamento de teste (simulado ou Sandbox) marcava `payout_status = pending`, e as telas de vendedor e admin mostravam "Repasse pendente", como se houvesse repasse devido. Agora o repasse permanece `not_applicable` para gateways de teste.
+
+**Estado incerto e intervenção**
+- Cobrança: o pagamento fica `uncertain`; a conferência só lê (`findByReference`) e nunca cria. Intervenção: nenhuma obrigatória; se a listagem não achar, continua incerto até decisão humana na janela.
+- Cliente de teste: `settings.asaas_sandbox_customer` guarda `creating`/`uncertain`/`ready`. Qualquer estado diferente de `ready` bloqueia nova criação. Intervenção: `php artisan asaas:reconcile-customer` (somente leitura) e, só se concluir "não encontrado", `--release-if-not-found`. Um processo que morra durante a criação deixa `creating`, tratado como incerto.
+
+**Alcance do isolamento dos testes (honesto)**
+- `TestCase` força SQLite em memória, cache em array, zera `ASAAS_*` e `PAYMENT_GATEWAY=simulated`, aborta se a conexão não for SQLite em memória/temporária e chama `Http::preventStrayRequests()`. Isso impede o código de teste (framework) de usar MySQL ou uma requisição HTTP sem fake. Não é isolamento de rede do container: um processo fora do cliente HTTP do Laravel não é bloqueado.
+
+**Testes desta revisão**
+- `vendor/bin/phpunit`: OK (90 tests, 435 assertions). `tsc --noEmit` e `eslint`: sem erros. `vite build` (pasta temporária): concluído.
+- Não executado: demonstração visual (exigiria subir servidor), teste concorrente real, contrato real do Asaas.
+
+**Premissas do contrato do Asaas continuam não verificadas** (ver seção do adaptador): campos e status das respostas, moeda, `cpfCnpj`, `limit` e `hasMore`.
