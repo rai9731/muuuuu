@@ -87,3 +87,52 @@ Se faltar dado, preserve o estado e decida entre `php artisan db:seed` ou restau
   - Exemplo (anúncio de R$ 3.900,00): o comprador paga R$ 3.900,00, a comissão é R$ 195,00 e o vendedor recebe R$ 3.705,00.
 - **Correspondência com o código (conferida por leitura do commit 085ca41, sem rodar testes):** `OrderController::amounts()` calcula `fee = round(preço × comissão / 100, 2)`, `total = preço` e `seller_amount = preço − fee`, e o checkout grava `orders.total`, `orders.seller_amount` e `payments.amount` (igual ao total) a partir desses valores. O preço vem de `cows.price` no banco. A comissão (`Setting::commission()`, padrão 5 em `PLATFORM_COMMISSION_PERCENT`) não foi alterada. O texto do checkout informa que a taxa é descontada do repasse. O teste `test_regra_a_comprador_paga_o_preco_anunciado_e_comissao_reduz_o_repasse` verifica os valores 3900 / 3900 / 195 / 3705 (resultado relatado anteriormente, não reexecutado nesta etapa).
 - **Escopo da aprovação:** a regra vale para pedidos novos; pedidos antigos continuam com o valor gravado na época. A aprovação não implica validação no Asaas Sandbox nem prontidão para produção.
+
+---
+
+## Adaptador do Asaas Sandbox: preparação local (27/10/2026, commit 77f18a4)
+
+**Escopo:** só código e testes locais com respostas HTTP falsas. Nenhuma requisição de rede, credencial, `.env`, Asaas, painel, Sandbox ou webhook foi usada. Nenhum cliente ou cobrança foi criado. `PAYMENT_GATEWAY=simulated` continua sendo o padrão.
+
+### Ativação (falha fechado)
+`PAYMENT_GATEWAY=asaas_sandbox` só ativa o adaptador se TODAS as condições valerem (`AsaasConfig::fromConfig`); caso contrário lança `AsaasConfigurationException` e nenhuma requisição é possível:
+- `ASAAS_ENV=sandbox` e `ASAAS_API_URL` exatamente igual a `https://sandbox.asaas.com/api/v3` (a URL prevista no projeto; produção, `http`, barra final, host parecido e URLs desconhecidas são recusados);
+- `ASAAS_API_KEY` preenchida (a chave NÃO é reconhecida como "de Sandbox" pelo formato; a proteção é a URL, o ambiente e a autorização);
+- `ASAAS_SANDBOX_AUTHORIZED=true` (autorização explícita da janela);
+- cliente de teste: `ASAAS_TEST_CUSTOMER_ID` ou `ASAAS_TEST_CUSTOMER_NAME` + `ASAAS_TEST_CUSTOMER_DOCUMENT` (11 ou 14 dígitos);
+- orçamento inteiro definido para cada operação (`ASAAS_BUDGET_*`; ausente ou inválido bloqueia a ativação, 0 bloqueia a operação).
+
+### Requisições contabilizadas (`AsaasHttp`)
+Única saída HTTP. Cada requisição consome o orçamento da sua operação ANTES de ser enviada (timeouts contam), vai só à URL exata e a caminhos de uma lista fechada, não segue redirecionamento (3xx é incerteza) e não tem repetição automática. Registra só operação, método, caminho e status (nunca chave, cabeçalhos ou corpos). Operações: `customer_create`, `customer_list`, `payment_create`, `qr`, `payment_get`, `payment_list`. O contador fica no cache (persistente com `CACHE_STORE=database`).
+
+### Incerteza e reconciliação (nunca recria)
+- **Cobrança:** timeout, 5xx, 408, redirecionamento ou resposta que não prove vínculo => incerto; o pedido fica `uncertain`. A conferência do comprador só LÊ: lista por `externalReference` e aceita candidatas do cliente de teste, modalidade PIX e estrutura válida, com lista completa (`hasMore=false`). Mais de uma candidata => divergente; nenhuma => "não encontrada" (nada é criado). `externalReference` sozinha não prova vínculo nem unicidade.
+- **Cliente de teste:** grava o estado `creating` antes de enviar; timeout ou resposta inválida => `uncertain`, a cobrança nem é enviada (`GatewayRejected`) e nenhuma nova criação é feita enquanto o estado não for reconciliado. `php artisan asaas:reconcile-customer` faz uma listagem (só leitura) e adota o cliente se houver exatamente um com os dados de teste; `--release-if-not-found` libera o estado só se a listagem concluir que não existe. Esse comando é ação humana de uma janela autorizada.
+- Pedido que ficou `uncertain` e "não encontrado" não tem nova criação automática (regra existente); a retomada é decisão de Rogers na janela.
+
+### Validação antes de associar ou confirmar
+Identidade (`pay_*`, igual ao consultado), objeto `payment`, cliente de teste, modalidade `PIX`, status conhecido (lista fechada), não removida, valor numérico, `externalReference` presente e, se houver campo `currency`, igual a `BRL`. Valor e referência divergentes voltam ao serviço, que marca "divergente". O serviço continua exigindo referência = código do pedido, valor = valor gravado = total, e status `RECEIVED`/`CONFIRMED`. Resposta ausente, inválida, incompleta, divergente, 4xx/5xx ou com status desconhecido não confirma nada.
+
+### Apresentação da confirmação no Sandbox
+`payments.gateway = asaas_sandbox` e `confirmation_source = asaas_sandbox`, distintos de `simulated`. Jornada: "Confirmado no Asaas SANDBOX (teste): não é pagamento real nem receita real"; toast, selos ("Sandbox — teste") e Timeline ("Pagamento confirmado (SANDBOX — teste)") dizem o mesmo. O vendedor recebe "Pagamento de TESTE (Sandbox) — não envie o animal"; `ship` e `confirm-delivery` recusam (422) qualquer pagamento de teste (simulado ou Sandbox); receita e comissão do admin e `total_sold` do vendedor excluem ambos (`Order::TEST_GATEWAYS`). Verificado por testes de API e por leitura do código; as telas NÃO foram abertas (não verificado visualmente). O botão de simulação só existe no gateway simulado.
+
+### Dado de teste: pendente antes de qualquer janela externa
+Não há dado de teste definido. Nenhum dado real foi usado ou inventado, e não foram feitas chamadas para descobrir quais identificadores o Sandbox aceita. É provável que o Sandbox rejeite documentos inválidos; a escolha de um cliente de teste adequado (de preferência criado por Rogers no painel e informado por `ASAAS_TEST_CUSTOMER_ID`, sem requisição de criação) precisa ser resolvida antes da janela.
+
+### Premissas não verificadas (sem rede nem documentação consultada)
+URL do Sandbox e formato das respostas (campos `customer`, `billingType`, `externalReference`, `hasMore`, `pixQrCode`), lista de status, ausência de campo de moeda, formato de `cpfCnpj` e o parâmetro `limit` seguem o conhecimento geral da API e a configuração do projeto. Um contrato divergente faria o adaptador recusar ou ficar inconclusivo (nunca confirmar), mas só uma janela real o comprova.
+
+### Orçamento por requisição para uma janela futura (proposta, não executada)
+Caminho feliz com cliente pré-criado: 1 `payment_create` + 1 `qr` + 2 `payment_get` (pendente e pago) = 4 requisições. Com resultado incerto na criação: +1 `payment_list` +1 `qr`. Cliente criado pela aplicação: +1 `customer_create` (+1 `customer_list` para reconciliar). Sugestão de teto: `customer_create` 1, `customer_list` 1, `payment_create` 1, `qr` 2, `payment_get` 4, `payment_list` 1 (total 10). Cada clique em "Conferir pagamento" consome 1 `payment_get`; esgotado o orçamento, a conferência fica inconclusiva sem requisição.
+
+### O que uma janela no Sandbox poderia deixar
+- No Asaas Sandbox: 1 cobrança Pix (pode permanecer pendente e continuar pagável após o vencimento), possivelmente 1 cliente de teste e, se pago no painel, um pagamento registrado. Pode não ser removível por completo. O cliente é criado com notificações desligadas.
+- Local (SQLite temporário): pedido, pagamento, reserva do animal, estado do cliente de teste (`settings`), contador de requisições (cache) e linhas de log sem segredos.
+
+### Resultados dos testes deste pacote (executados agora, ambiente isolado)
+- `vendor/bin/phpunit` (suíte nativa): `OK (89 tests, 425 assertions)`; dos quais 62 testes e 286 asserções são de `AsaasSandboxAdapterTest`.
+- `php artisan test`: `88 warnings, 1 passed (425 assertions)`. Mesma natureza dos avisos anteriores; causa não determinada (hipótese não confirmada: leitura do `.env` ausente). Não são falhas do PHPUnit.
+- Testes de mutação pontuais: removida a validação de status e a de paginação, 4 testes falharam (detecção confirmada); código restaurado.
+- `tsc --noEmit` e `eslint`: sem erros. Build do frontend (`vite build` para pasta temporária): concluído.
+- Descoberta de ambiente: o container recebe `ASAAS_*` preenchidas via `env_file: .env` do Compose (valores não lidos nem exibidos). Os testes agora as zeram em `TestCase::createApplication` e bloqueiam qualquer requisição HTTP sem fake (`Http::preventStrayRequests`); um teste confirma que `services.asaas.*` fica vazio nos testes. Execuções anteriores de testes podem ter carregado essas variáveis na memória do processo (sem nenhum código que as usasse). Demonstrações feitas com `docker compose run` herdaram as variáveis no ambiente do container.
+- Limitações: sem teste de tela (nenhuma tela aberta), sem teste concorrente e sem contrato real do Asaas.
