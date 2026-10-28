@@ -226,3 +226,22 @@ Escopo: revisão do código e dos testes da candidata (`77f18a4`, `6536cc7`) ant
 - A prova de concorrência no MySQL vale para a versão, o isolamento e a carga exercitados (8 processos, MySQL 8.0.46 em tmpfs). Não comprova a configuração de uma futura janela: conexão efetiva, versão e isolamento do MySQL operacional, e os até 5 workers do PHP-FPM seguem a reconferir no portão. Os resultados do SQLite não são prova de concorrência no MySQL.
 - A trava de criação continua em cache (redundante, não durável); a proteção contra segunda criação é o status persistido em `payments` e `settings`.
 - A correção não aprova a janela: cliente de teste, configuração efetiva, estado inicial do registro durável, cenário, tetos e operações externas dependem de decisão posterior e específica.
+
+---
+
+## Webhook LOCAL e SIMULADO (28/10/2026)
+
+**O que é:** um endpoint de demonstração, `POST /api/webhooks/simulated-pix`, que recebe um aviso FICTÍCIO e o encaminha à mesma conferência do caminho manual. **Não é o webhook do Asaas**, não recebe nada de fora, não foi registrado em nenhum painel e não foi exposto por túnel ou endereço público. A origem do aviso e a confirmação são SIMULADAS (`confirmation_source = simulation`; a resposta traz `origin: webhook_local_simulado` e `simulated: true`).
+
+**Regras (`SimulatedWebhookController`):**
+- **Desligado por padrão:** sem `SIMULATED_WEBHOOK_TOKEN` (`config boinarede.simulated_webhook_token`) responde 404. Só existe com o gateway SIMULADO ativo (com `asaas_sandbox` selecionado, nunca atende).
+- **Token de teste:** cabeçalho `X-Webhook-Token`, comparado em tempo constante; ausente ou incorreto => 401, sem consultar nada.
+- **Identificação:** `payment.id` (cobrança), `payment.externalReference` (código do pedido) e, se vier, `payment.value`. Cobrança desconhecida => 404; referência ou valor diferentes dos gravados => 422, sem consultar nem alterar.
+- **O conteúdo do aviso nunca confirma:** o aviso só identifica pedido e cobrança. A decisão é de `PixPaymentService::check`, que consulta o gateway e exige id, referência, valor e status `RECEIVED`/`CONFIRMED`. Pendente => `pending`; divergência no gateway => `divergent` e nada confirmado; erro de conferência => 503 `inconclusive`, nada confirmado.
+- **Idempotência:** repetir o aviso não duplica a transição nem as notificações. Erro de persistência (exceção) desfaz a transação: o pedido segue aguardando.
+
+**Como ligar localmente (demonstração):** definir `SIMULATED_WEBHOOK_TOKEN` com um valor fictício e enviar, por exemplo, `curl -X POST http://localhost:8080/api/webhooks/simulated-pix -H "X-Webhook-Token: <token>" -H "Content-Type: application/json" -d '{"event":"PAYMENT_RECEIVED","payment":{"id":"<gateway_id>","externalReference":"<código do pedido>","value":3900}}'`, depois de "Simular pagamento" na jornada. Este roteiro NÃO foi executado contra a aplicação rodando; a verificação foi feita pelos testes.
+
+**Testes (`tests/Feature/SimulatedWebhookTest`, 13):** token ausente/incorreto/vazio; desligado sem token; aviso válido com pagamento no gateway; aviso sem pagamento no gateway (não confirma); repetição; cobrança/pedido/payload desconhecidos; aviso de outro pedido; valor divergente no aviso e no gateway; erro na conferência; erro na persistência (e reenvio depois); caminho manual preservado; inativo com o Sandbox selecionado. Controle negativo: sem a verificação do token, o teste de token falha.
+
+**Não validado:** webhook real do Asaas (formato, autenticação, reenvio, ordem e duplicidade de eventos reais), exposição pública, qualquer integração externa.
