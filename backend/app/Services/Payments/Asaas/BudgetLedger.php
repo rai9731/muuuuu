@@ -3,56 +3,50 @@
 namespace App\Services\Payments\Asaas;
 
 use Illuminate\Contracts\Cache\Repository;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 /**
- * Contador de orçamento de requisições e trava de "uma criação por recurso", sobre um repositório de cache.
+ * Orçamento de requisições e trava de "uma criação por recurso".
  *
- * Inicialização SEM sobrescrita: `Repository::add()` sem TTL cai em get + put (não atômico) e pode recolocar o contador
- * em zero depois de um incremento concorrente. Aqui a criação usa `add()` COM TTL, que delega ao `add` do driver
- * (database: INSERT IGNORE; redis: SET NX; memcached: add) e nunca sobrescreve. Quem perde a corrida incrementa.
+ * ORÇAMENTO: persistente no banco ({@see DurableBudget}), não no cache. `cache:clear`, `optimize:clear` e reinício não o
+ * renovam. A reserva é confirmada antes do envio e nunca é devolvida.
  *
- * Atomicidade do incremento entre processos é do driver (database: transação com lockForUpdate; redis: INCR).
- * O contador é cache: expira em TTL e `cache:clear`/perda do cache o reinicia (reabre o orçamento).
+ * TRAVA DE CRIAÇÃO (`claimOnce`): continua no cache, com `add()` COM TTL (database: INSERT IGNORE; redis: SET NX;
+ * memcached: add), que nunca sobrescreve. É defesa redundante e NÃO durável: a proteção contra segunda criação é o
+ * status persistido em `payments`/`settings`.
  */
 final class BudgetLedger
 {
-    /** Mesmo valor do `forever()` do driver database (10 anos). */
+    /** Mesmo valor do `forever()` do driver database (10 anos), usado só na trava de criação. */
     public const TTL = 315360000;
 
-    public function __construct(private readonly Repository $cache) {}
+    public function __construct(private readonly Repository $cache, private readonly DurableBudget $budget) {}
 
-    public function used(string $op): int
+    /** Instância da aplicação: orçamento na conexão padrão do banco e trava no cache padrão. */
+    public static function forApplication(): self
     {
-        return (int) $this->cache->get($this->key($op), 0);
+        $db = DB::connection();
+        // Testes com RefreshDatabase já rodam dentro de uma transação; em produção o nível aceito é 0.
+        $level = app()->environment('testing') ? $db->transactionLevel() : 0;
+
+        return new self(Cache::store(), new DurableBudget($db, $level));
+    }
+
+    /** @return int|null reservas feitas; null = linha ausente/ilegível (não confundir com 0) */
+    public function used(string $op): ?int
+    {
+        return $this->budget->used($op);
     }
 
     /**
-     * Reserva uma unidade. Falha fechado: exceção ou retorno inesperado do cache => AsaasRefusedException (nada enviado).
+     * Reserva uma unidade, confirmada no banco antes de retornar. Falha fechado.
      *
      * @throws AsaasRefusedException
      */
     public function reserve(string $op, int $limit): void
     {
-        $key = $this->key($op);
-        try {
-            $used = $this->cache->increment($key);
-            if ($used === false) { // contador ainda não existe
-                $used = $this->cache->add($key, 1, self::TTL) ? 1 : $this->cache->increment($key);
-            }
-        } catch (\Throwable) {
-            throw new AsaasRefusedException('Contador de orçamento indisponível; nada foi enviado.');
-        }
-        if (! is_int($used) || $used < 1) {
-            throw new AsaasRefusedException('Contador de orçamento inválido; nada foi enviado.');
-        }
-        if ($used > $limit) {
-            try {
-                $this->cache->decrement($key);
-            } catch (\Throwable) {
-                // o contador fica alto: erra para o lado seguro
-            }
-            throw new AsaasRefusedException("Orçamento de requisições '{$op}' esgotado.");
-        }
+        $this->budget->reserve($op, $limit);
     }
 
     /**
@@ -75,10 +69,5 @@ final class BudgetLedger
             $this->cache->forget('asaas:create-attempt:'.$name);
         } catch (\Throwable) {
         }
-    }
-
-    private function key(string $op): string
-    {
-        return "asaas:ledger:{$op}";
     }
 }

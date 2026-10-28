@@ -3,7 +3,6 @@
 namespace App\Services\Payments\Asaas;
 
 use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -22,10 +21,10 @@ class AsaasHttp
 
     public function __construct(private readonly AsaasConfig $config, ?BudgetLedger $ledger = null)
     {
-        $this->ledger = $ledger ?? new BudgetLedger(Cache::store());
+        $this->ledger = $ledger ?? BudgetLedger::forApplication();
     }
 
-    /** @return array<string,int> requisições já feitas por operação */
+    /** @return array<string,int|null> reservas já feitas por operação (null = linha ausente, diferente de 0) */
     public function ledger(): array
     {
         return collect(AsaasConfig::OPERATIONS)->mapWithKeys(fn ($op) => [$op => $this->ledger->used($op)])->all();

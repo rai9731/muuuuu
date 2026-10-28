@@ -20,8 +20,8 @@ final class AsaasConfig
     public const CUSTOMER_REFERENCE = 'BNR-TEST-CUSTOMER';
 
     /**
-     * Drivers de cache aceitos para o contador de orçamento (incremento atômico compartilhado entre processos).
-     * `array` e `file` não servem fora dos testes. O contador é cache: `cache:clear` o zera.
+     * Drivers de cache aceitos para a trava de criação (`add` atômico compartilhado entre processos). O orçamento de
+     * requisições NÃO usa cache: é a tabela `asaas_request_budget` (DurableBudget). `array` e `file` só em testes.
      */
     public const ATOMIC_CACHE_DRIVERS = ['database', 'redis', 'memcached'];
 

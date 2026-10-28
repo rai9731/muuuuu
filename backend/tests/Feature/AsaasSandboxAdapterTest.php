@@ -11,15 +11,20 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\Payments\Asaas\AsaasConfig;
 use App\Services\Payments\Asaas\AsaasConfigurationException;
+use App\Services\Payments\Asaas\AsaasHttp;
 use App\Services\Payments\Asaas\AsaasPixGateway;
+use App\Services\Payments\Asaas\AsaasRefusedException;
+use App\Services\Payments\Asaas\DurableBudget;
 use App\Services\Payments\GatewayRejected;
 use App\Services\Payments\GatewayUncertain;
 use App\Services\Payments\PixGateway;
 use App\Services\Payments\PixPaymentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\AsaasFakeServer;
@@ -706,84 +711,138 @@ class AsaasSandboxAdapterTest extends TestCase
         $this->assertSame('uncertain', $this->gw()->customerStatus());
     }
 
-    // ───────────── orçamento: reserva fail-closed e regressão da leitura-e-gravação ─────────────
+    // ───────────── orçamento persistente (banco), fora do cache ─────────────
 
-    public function test_reserva_do_orcamento_nao_depende_de_leitura_defasada(): void
+    private function used(string $op): ?int
     {
-        // Simula outro processo: a LEITURA do contador devolve sempre 0 (defasada), mas o incremento é real.
-        // A implementação antiga (get + forever) nunca via o teto e enviava tudo; a atual reserva por incremento.
-        Cache::extend('defasado', fn () => Cache::repository(new class extends \Illuminate\Cache\ArrayStore {
-            private bool $defasado = true;
+        $v = DB::table(DurableBudget::TABLE)->where('op', $op)->value('used');
 
-            public function get($key)
-            {
-                return $this->defasado && str_starts_with($key, 'asaas:ledger:') ? 0 : parent::get($key);
-            }
+        return $v === null ? null : (int) $v;
+    }
 
-            public function increment($key, $value = 1)
-            {
-                $this->defasado = false; // o incremento é do "servidor" do cache e enxerga o valor real
-                try {
-                    return parent::increment($key, $value);
-                } finally {
-                    $this->defasado = true;
-                }
-            }
-        }));
-        config(['cache.stores.defasado' => ['driver' => 'defasado'], 'cache.default' => 'defasado']);
+    public function test_limpeza_do_cache_e_reinicio_nao_renovam_o_saldo(): void
+    {
+        // Antes (contador em cache): Cache::flush() recolocava o contador em 0 e o saldo era renovado.
         $srv = AsaasFakeServer::install();
         $this->configure(['budget' => ['payment_get' => 2]]);
         $c = $this->create();
+        $this->gw()->getCharge($c->id);
+        $this->gw()->getCharge($c->id);
+        $this->assertSame(2, $this->used('payment_get'));
 
-        $enviadas = 0;
-        for ($i = 0; $i < 6; $i++) {
-            try {
-                $this->gw()->getCharge($c->id);
-                $enviadas++;
-            } catch (GatewayUncertain) {
-            }
+        Cache::flush(); // limpeza do cache
+        $this->app->forgetInstance(PixGateway::class); // "reinício": nova instância do adaptador e do orçamento
+
+        try {
+            $this->gw()->getCharge($c->id);
+            $this->fail('O saldo foi renovado pela limpeza do cache.');
+        } catch (GatewayUncertain $e) {
+            $this->assertStringContainsString('esgotado', $e->getMessage());
         }
-
-        $this->assertSame(2, $enviadas);
+        $this->assertSame(2, $this->used('payment_get'));
         $this->assertSame(2, $srv->count('GET', '/payments/'.$c->id) - $srv->count('GET', '/payments/'.$c->id.'/pixQrCode'));
     }
 
-    public function test_falha_ou_retorno_invalido_do_cache_nao_envia_nada(): void
+    public function test_reserva_nao_e_devolvida_por_timeout_nem_por_queda_apos_a_reserva(): void
     {
-        foreach (['excecao', 'falso'] as $modo) {
-            $driver = 'quebrado_'.$modo;
-            Cache::extend($driver, fn () => Cache::repository(new class($modo) extends \Illuminate\Cache\ArrayStore {
-                public function __construct(private string $modo)
-                {
-                    parent::__construct();
-                }
+        $srv = AsaasFakeServer::install(['get' => 'timeout']);
+        $this->configure(['budget' => ['payment_get' => 2]]);
+        $c = $this->create();
 
-                public function increment($key, $value = 1)
-                {
-                    if (str_starts_with($key, 'asaas:ledger:')) {
-                        return $this->modo === 'excecao' ? throw new \RuntimeException('cache fora do ar') : false;
-                    }
-
-                    return parent::increment($key, $value);
-                }
-
-                public function add($key, $value, $seconds)
-                {
-                    // contador inutilizável: nem existe (increment => false) nem pode ser criado
-                    return str_starts_with($key, 'asaas:ledger:') && $this->modo === 'falso' ? false : parent::add($key, $value, $seconds);
-                }
-            }));
-            config(['cache.stores.'.$driver => ['driver' => $driver], 'cache.default' => $driver]);
-            $srv = AsaasFakeServer::install();
-            $this->configure(['budget' => ['payment_create' => 5, 'payment_get' => 5]]);
-
+        foreach ([1, 2] as $i) { // resultado incerto: o orçamento continua gasto
             try {
-                $this->create();
-                $this->fail('Sem contador confiável, nada pode ser enviado.');
+                $this->gw()->getCharge($c->id);
+                $this->fail('timeout esperado');
+            } catch (GatewayUncertain $e) {
+                $this->assertStringNotContainsString('esgotado', $e->getMessage());
+            }
+        }
+        $this->assertSame(2, $this->used('payment_get'));
+        try {
+            $this->gw()->getCharge($c->id);
+            $this->fail('O orçamento foi liberado por um resultado incerto.');
+        } catch (GatewayUncertain $e) {
+            $this->assertStringContainsString('esgotado', $e->getMessage());
+        }
+        $this->assertSame(2, $srv->count('GET', '/payments/'.$c->id) - $srv->count('GET', '/payments/'.$c->id.'/pixQrCode'));
+    }
+
+    public function test_queda_entre_a_reserva_confirmada_e_a_resposta_nao_devolve_o_orcamento(): void
+    {
+        Http::fake(fn () => throw new \RuntimeException('processo interrompido'));
+        $this->configure(['budget' => ['qr' => 3]]);
+        $http = new AsaasHttp(AsaasConfig::fromConfig());
+        try {
+            $http->send('qr', 'GET', '/payments/pay_X1/pixQrCode');
+            $this->fail('queda esperada');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('processo interrompido', $e->getMessage());
+        }
+        $this->assertSame(1, $this->used('qr'));
+    }
+
+    public function test_tetos_zero_de_cliente_continuam_bloqueados_no_novo_caminho(): void
+    {
+        Http::fake();
+        $this->configure(['budget' => ['customer_create' => 0, 'customer_list' => 0]]);
+        $http = new AsaasHttp(AsaasConfig::fromConfig());
+
+        foreach ([['customer_create', 'POST'], ['customer_list', 'GET']] as [$op, $method]) {
+            try {
+                $http->send($op, $method, '/customers');
+                $this->fail("{$op} deveria estar bloqueado");
+            } catch (AsaasRefusedException $e) {
+                $this->assertStringContainsString('esgotado', $e->getMessage());
+            }
+            $this->assertSame(0, $this->used($op));
+        }
+        Http::assertNothingSent();
+    }
+
+    public function test_registro_ausente_ou_inconsistente_nao_envia_nada_e_nao_recria_saldo(): void
+    {
+        $srv = AsaasFakeServer::install();
+        $this->configure(['budget' => ['payment_create' => 5, 'payment_get' => 5]]);
+
+        // 1) sentinela ausente
+        DB::table(DurableBudget::TABLE)->where('op', DurableBudget::SENTINEL)->delete();
+        // 2) linhas todas ausentes (ex.: TRUNCATE)
+        foreach ([1, 2] as $etapa) {
+            if ($etapa === 2) {
+                DB::table(DurableBudget::TABLE)->delete();
+            }
+            try {
+                $this->create(null, 3900.0, 'BNR-ABCDEFG'.$etapa);
+                $this->fail('Sem registro íntegro, nada pode ser enviado.');
             } catch (GatewayRejected) {
             }
-            $this->assertCount(0, $srv->log, $modo);
         }
+        $this->assertCount(0, $srv->log);
+        $this->assertSame(0, DB::table(DurableBudget::TABLE)->count(), 'a ausência não pode recriar linhas');
+    }
+
+    public function test_falha_de_gravacao_ou_tabela_inexistente_nao_envia_nada(): void
+    {
+        $srv = AsaasFakeServer::install();
+        $this->configure(['budget' => ['payment_create' => 5]]);
+
+        DB::statement("CREATE TRIGGER bloqueia_reserva BEFORE UPDATE ON asaas_request_budget BEGIN SELECT RAISE(ABORT, 'falha de gravação'); END");
+        try {
+            $this->create();
+            $this->fail('Sem gravação confirmada, nada pode ser enviado.');
+        } catch (GatewayRejected $e) {
+            $this->assertStringNotContainsString('falha de gravação', $e->getMessage()); // sem vazar detalhe do banco
+        }
+        DB::statement('DROP TRIGGER bloqueia_reserva');
+        $this->assertSame(0, $this->used('payment_create'));
+
+        Schema::drop(DurableBudget::TABLE);
+        try {
+            $this->create();
+            $this->fail('Sem a tabela, nada pode ser enviado.');
+        } catch (GatewayRejected) {
+        }
+        $this->assertCount(0, $srv->log);
     }
 
     public function test_cache_sem_contador_atomico_entre_processos_nao_ativa_o_adaptador_fora_dos_testes(): void
@@ -846,20 +905,6 @@ class AsaasSandboxAdapterTest extends TestCase
         config(['cache.stores.corrida' => ['driver' => 'corrida'], 'cache.default' => 'corrida']);
 
         return $store;
-    }
-
-    public function test_inicializacao_do_contador_nao_sobrescreve_o_incremento_de_outro_processo(): void
-    {
-        // Antes (add sem TTL = get + put): o contador era recolocado em 0 e o resultado final era 1. Agora: 4.
-        $store = $this->cacheComCorrida();
-        AsaasFakeServer::install();
-        $this->configure(['budget' => ['payment_get' => 5]]);
-        $c = $this->create();
-
-        $store->plant = ['asaas:ledger:payment_get' => 3]; // outro processo já havia contado 3 consultas
-        $this->gw()->getCharge($c->id);
-
-        $this->assertSame(4, $this->gw()->ledger()['payment_get']);
     }
 
     public function test_trava_de_criacao_nao_sobrescreve_a_de_outro_processo(): void

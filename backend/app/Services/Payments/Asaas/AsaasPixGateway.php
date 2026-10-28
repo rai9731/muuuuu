@@ -37,7 +37,7 @@ class AsaasPixGateway implements PixGateway
 
     public function __construct(private readonly AsaasConfig $config, private readonly AsaasHttp $http, ?BudgetLedger $ledger = null)
     {
-        $this->ledger = $ledger ?? new BudgetLedger(\Illuminate\Support\Facades\Cache::store());
+        $this->ledger = $ledger ?? BudgetLedger::forApplication();
     }
 
     public function source(): string
