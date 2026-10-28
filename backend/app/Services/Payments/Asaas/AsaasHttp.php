@@ -37,11 +37,14 @@ class AsaasHttp
         in_array($op, AsaasConfig::OPERATIONS, true) || throw new AsaasRefusedException('Operação desconhecida.');
         preg_match(self::PATH, $path) === 1 || throw new AsaasRefusedException('Caminho não permitido.');
 
-        $used = (int) Cache::get("asaas:ledger:{$op}", 0);
-        if ($used >= $this->config->budget[$op]) {
+        // Reserva atômica: incrementa primeiro e só então compara (duas requisições simultâneas não passam pelo mesmo saldo).
+        $key = "asaas:ledger:{$op}";
+        Cache::add($key, 0);
+        $used = (int) Cache::increment($key);
+        if ($used > $this->config->budget[$op]) {
+            Cache::decrement($key);
             throw new AsaasRefusedException("Orçamento de requisições '{$op}' esgotado.");
         }
-        Cache::forever("asaas:ledger:{$op}", $used + 1);
 
         $options = array_filter(['query' => $query ?: null, 'json' => $json]);
         try {

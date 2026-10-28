@@ -176,7 +176,8 @@ class PixPaymentService
             if ($order->status !== 'awaiting_payment') {
                 return null; // já confirmado/cancelado: não transicionar duas vezes
             }
-            $order->update(['status' => 'paid', 'paid_at' => now(), 'payout_status' => 'pending']);
+            // Pagamento de teste (simulado/Sandbox) não gera repasse devido: payout_status permanece 'not_applicable'.
+            $order->update(['status' => 'paid', 'paid_at' => now()] + (in_array($this->gatewayName(), Order::TEST_GATEWAYS, true) ? [] : ['payout_status' => 'pending']));
             Payment::whereKey($paymentId)->update([
                 'status' => 'approved', 'paid_at' => now(), 'confirmation_source' => $this->gateway->source(),
             ]);

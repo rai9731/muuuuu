@@ -599,8 +599,26 @@ class AsaasSandboxAdapterTest extends TestCase
 
         $fresh = Order::find($order['id']);
         $this->assertSame('paid', $fresh->status);
+        $this->assertSame('not_applicable', $fresh->payout_status); // teste não gera repasse devido
         $this->assertNull($fresh->shipped_at);
         $this->assertNull($fresh->delivered_at);
+    }
+
+    public function test_orcamento_esgotado_mantem_o_contador_no_limite(): void
+    {
+        $srv = AsaasFakeServer::install();
+        $this->configure(['budget' => ['payment_get' => 2]]);
+        $c = $this->create();
+
+        for ($i = 0; $i < 5; $i++) {
+            try {
+                $this->gw()->getCharge($c->id);
+            } catch (GatewayUncertain) {
+            }
+        }
+
+        $this->assertSame(2, $srv->count('GET', '/payments/'.$c->id) - $srv->count('GET', '/payments/'.$c->id.'/pixQrCode'));
+        $this->assertSame(2, $this->gw()->ledger()['payment_get']);
     }
 
     public function test_preview_do_checkout_informa_modo_sandbox(): void
