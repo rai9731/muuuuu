@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Barcode, CheckCircle2, Copy, CreditCard, ExternalLink, MessageCircle, PackageCheck, QrCode, Star, Zap } from 'lucide-react';
+import { ArrowLeft, Barcode, CheckCircle2, Copy, CreditCard, ExternalLink, MessageCircle, PackageCheck, QrCode, RefreshCw, Star, Zap } from 'lucide-react';
 import { orderService } from '@services/orderService';
 import { messageService } from '@services/messageService';
 import { errorMessage } from '@services/api';
@@ -8,13 +8,15 @@ import { useAsync } from '@hooks/useAsync';
 import { useToast } from '@hooks/useToast';
 import { Button } from '@components/ui/Button';
 import { ConfirmDialog } from '@components/ui/ConfirmDialog';
-import { Avatar, ErrorState, GlassCard, Skeleton, StatusBadge } from '@components/ui/Display';
+import { Avatar, ErrorState, GlassCard, Skeleton } from '@components/ui/Display';
 import { Textarea } from '@components/ui/Field';
 import { Modal } from '@components/ui/Modal';
 import { RatingStars } from '@components/ui/RatingStars';
+import { PaymentJourney } from '@components/ui/PaymentJourney';
 import { Timeline } from '@components/ui/Timeline';
 import { CowPlaceholder } from '@components/cow/CowPlaceholder';
-import { DELIVERY_METHODS, ORDER_STATUS, PAYMENT_METHODS, PAYMENT_STATUS } from '@utils/constants';
+import { OrderStatusBadge, PaymentStatusBadge } from '@components/ui/OrderStatusBadge';
+import { DELIVERY_METHODS, PAYMENT_METHODS } from '@utils/constants';
 import { formatCurrency, formatDate, formatDateTime } from '@utils/format';
 
 export default function PurchaseDetail() {
@@ -28,6 +30,7 @@ export default function PurchaseDetail() {
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
   const isNew = params.get('novo') === '1';
 
   const copyPix = async () => {
@@ -80,12 +83,13 @@ export default function PurchaseDetail() {
     }
   };
 
+  // Simula o pagamento no gateway de demonstração. Não confirma o pedido: quem confirma é a conferência.
   const simulate = async () => {
     setBusy(true);
     try {
       const res = await orderService.simulatePayment(order!.id);
       setData(res.data);
-      toast.success(res.message);
+      toast.info('Pagamento simulado', res.message);
     } catch (err) {
       toast.error('Não foi possível simular o pagamento', errorMessage(err));
     } finally {
@@ -93,11 +97,29 @@ export default function PurchaseDetail() {
     }
   };
 
+  // Conferência explícita: o servidor consulta o gateway e valida cobrança, valor e status antes de confirmar.
+  const check = async () => {
+    setChecking(true);
+    try {
+      const res = await orderService.checkPayment(order!.id);
+      setData(res.data);
+      if (res.check.result === 'confirmed') toast.success(res.check.test_mode === 'sandbox' ? 'Confirmado no Sandbox (teste)' : res.check.simulated ? 'Confirmação simulada' : 'Pagamento confirmado', res.check.message);
+      else if (res.check.result === 'pending') toast.info('Ainda não confirmado', res.check.message);
+      else toast.warning('Conferência sem confirmação', res.check.message);
+    } catch (err) {
+      toast.error('Não foi possível conferir o pagamento', errorMessage(err));
+    } finally {
+      setChecking(false);
+    }
+  };
+
   if (error) return <GlassCard><ErrorState message={error} onRetry={reload} /></GlassCard>;
   if (loading || !order) return <Skeleton className="h-[480px] rounded-3xl" />;
 
   const payment = order.payment;
-  const pending = order.status === 'awaiting_payment' && payment?.status === 'pending';
+  const awaiting = order.status === 'awaiting_payment';
+  const pending = awaiting && payment?.status === 'pending';
+  const canCheck = awaiting && !!payment;
 
   return (
     <div>
@@ -124,7 +146,7 @@ export default function PurchaseDetail() {
           <h2 className="text-2xl font-bold">Pedido #{order.code}</h2>
           <p className="text-sm text-grafite/65">Realizado em {formatDateTime(order.created_at)}</p>
         </div>
-        <StatusBadge map={ORDER_STATUS} value={order.status} />
+        <OrderStatusBadge order={order} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
@@ -136,8 +158,25 @@ export default function PurchaseDetail() {
                   {payment.method === 'pix' ? <QrCode className="h-5 w-5 text-pasto" /> : payment.method === 'boleto' ? <Barcode className="h-5 w-5 text-pasto" /> : <CreditCard className="h-5 w-5 text-pasto" />}
                   Pagamento via {PAYMENT_METHODS[payment.method]}
                 </h3>
-                <StatusBadge map={PAYMENT_STATUS} value={payment.status} />
+                <PaymentStatusBadge payment={payment} />
               </div>
+
+              {order.journey && (
+                <div className="mt-5 rounded-2xl bg-white/50 p-4">
+                  <PaymentJourney steps={order.journey} checking={checking} />
+                </div>
+              )}
+
+              {canCheck && (
+                <div className="mt-4">
+                  <Button variant="cta" icon={<RefreshCw className="h-4 w-4" />} onClick={check} loading={checking}>
+                    {payment?.status === 'preparing' ? 'Tentar preparar a cobrança' : 'Conferir pagamento'}
+                  </Button>
+                  <p className="mt-2 text-xs text-grafite/60">
+                    A conferência consulta a cobrança e só confirma se ela corresponder a este pedido e ao valor. Clicar aqui sem pagamento não confirma nada.
+                  </p>
+                </div>
+              )}
 
               {pending && (
                 <div className="mt-5">
@@ -166,25 +205,42 @@ export default function PurchaseDetail() {
                     </a>
                   )}
                   {payment.due_date && <p className="mt-3 text-xs text-grafite/60">Vencimento: {formatDate(payment.due_date)}. Se não for pago, o pedido é cancelado e a vaca volta para a vitrine.</p>}
+                  {payment.sandbox && (
+                    <div className="mt-4 rounded-2xl bg-trigo/15 p-4">
+                      <p className="text-sm text-grafite/80">TESTE: esta cobrança é do Asaas Sandbox. Nenhum pagamento real é feito. Depois de pagar no Sandbox, clique em "Conferir pagamento".</p>
+                    </div>
+                  )}
                   {payment.simulated && (
                     <div className="mt-4 rounded-2xl bg-trigo/15 p-4">
-                      <p className="text-sm text-grafite/80">Cobrança simulada (Asaas não configurado neste ambiente).</p>
-                      <Button className="mt-2" size="sm" variant="cta" icon={<Zap className="h-4 w-4" />} onClick={simulate} loading={busy}>
-                        Simular pagamento confirmado
+                      <p className="text-sm text-grafite/80">SIMULAÇÃO: esta cobrança existe só no gateway de demonstração. Nada foi cobrado nem pago no Asaas.</p>
+                      <Button className="mt-2" size="sm" variant="outline" icon={<Zap className="h-4 w-4" />} onClick={simulate} loading={busy}>
+                        Simular pagamento no gateway de demonstração
                       </Button>
+                      <p className="mt-2 text-xs text-grafite/65">Depois, clique em "Conferir pagamento" para que o sistema valide e confirme.</p>
                     </div>
                   )}
                 </div>
               )}
-              {payment.paid_at && <p className="mt-3 text-sm text-grafite/70">Pago em {formatDateTime(payment.paid_at)}</p>}
+              {payment.paid_at && (
+                <p className="mt-3 text-sm text-grafite/70">
+                  {payment.confirmation_source === 'simulation' ? 'Confirmação simulada em ' : payment.confirmation_source === 'asaas_sandbox' ? 'Confirmação no Sandbox (teste, não é pagamento real) em ' : 'Confirmado em '}{formatDateTime(payment.paid_at)}
+                </p>
+              )}
             </GlassCard>
           )}
 
           <GlassCard>
             <h3 className="mb-5 font-semibold">Acompanhamento</h3>
             {order.timeline && <Timeline events={order.timeline} />}
+            {payment?.test_mode && order.status === 'paid' && (
+              <p className="mt-4 rounded-xl bg-trigo/15 p-3 text-xs text-grafite/80">
+                {payment.test_mode === 'sandbox'
+                  ? 'Pedido de teste: pagamento confirmado no Asaas Sandbox (não é pagamento real); o pedido não avança para envio nem entrega.'
+                  : 'Pedido de demonstração: com pagamento simulado, o pedido não avança para envio nem entrega.'}
+              </p>
+            )}
             <div className="mt-6 flex flex-wrap gap-2">
-              {['paid', 'in_transit'].includes(order.status) && (
+              {['paid', 'in_transit'].includes(order.status) && !payment?.test_mode && (
                 <Button icon={<PackageCheck className="h-4 w-4" />} onClick={() => setConfirmOpen(true)}>Confirmar recebimento</Button>
               )}
               {order.status === 'delivered' && !order.review && (
@@ -214,9 +270,8 @@ export default function PurchaseDetail() {
               </div>
             </div>
             <dl className="mt-5 space-y-2 border-t border-pasto/10 pt-4 text-sm">
-              <div className="flex justify-between"><dt className="text-grafite/70">Valor</dt><dd>{formatCurrency(order.price)}</dd></div>
-              <div className="flex justify-between"><dt className="text-grafite/70">Taxa da plataforma</dt><dd className="text-grafite/60">incluída</dd></div>
-              <div className="flex justify-between text-base"><dt className="font-semibold">Total</dt><dd className="font-bold text-pasto">{formatCurrency(order.total)}</dd></div>
+              <div className="flex justify-between"><dt className="text-grafite/70">Preço do anúncio</dt><dd>{formatCurrency(order.price)}</dd></div>
+              <div className="flex justify-between text-base"><dt className="font-semibold">Você paga</dt><dd className="font-bold text-pasto">{formatCurrency(order.total)}</dd></div>
             </dl>
           </GlassCard>
 

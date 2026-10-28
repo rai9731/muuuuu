@@ -6,7 +6,8 @@ import { useAsync } from '@hooks/useAsync';
 import { DataTable, type Column } from '@components/ui/DataTable';
 import { EmptyState, ErrorState, GlassCard, PageHeader, Pagination, StatusBadge, Tabs } from '@components/ui/Display';
 import { Input } from '@components/ui/Field';
-import { ORDER_STATUS, PAYOUT_STATUS } from '@utils/constants';
+import { OrderStatusBadge } from '@components/ui/OrderStatusBadge';
+import { PAYOUT_STATUS } from '@utils/constants';
 import { formatCurrency, formatDate } from '@utils/format';
 
 const TABS = [
@@ -29,7 +30,7 @@ export default function AdminSales() {
     { key: 'total', header: 'Total', render: (o) => <span className="font-semibold">{formatCurrency(o.total)}</span> },
     { key: 'fee', header: 'Comissão', render: (o) => formatCurrency(o.platform_fee), hideOnMobile: true },
     { key: 'payout', header: 'Repasse', render: (o) => <StatusBadge map={PAYOUT_STATUS} value={o.payout_status} />, hideOnMobile: true },
-    { key: 'status', header: 'Status', render: (o) => <StatusBadge map={ORDER_STATUS} value={o.status} /> },
+    { key: 'status', header: 'Status', render: (o) => <OrderStatusBadge order={o} /> },
   ];
 
   return (

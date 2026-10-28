@@ -21,6 +21,9 @@ Route::middleware('throttle:10,1')->group(function () {
     Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword']);
 });
 
+// Webhook LOCAL e SIMULADO (desligado sem SIMULATED_WEBHOOK_TOKEN; não é o webhook do Asaas).
+Route::post('/webhooks/simulated-pix', \App\Http\Controllers\Api\SimulatedWebhookController::class)->middleware('throttle:60,1');
+
 Route::get('/cows', [CowController::class, 'index']);
 Route::get('/cows/{id}', [CowController::class, 'show'])->whereNumber('id');
 
@@ -53,6 +56,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/my/purchases', [OrderController::class, 'purchases']);
     Route::get('/my/purchases/{id}', [OrderController::class, 'purchase']);
     Route::post('/my/purchases/{id}/simulate-payment', [OrderController::class, 'simulatePayment']);
+    Route::post('/my/purchases/{id}/check-payment', [OrderController::class, 'checkPayment'])->middleware('throttle:20,1');
     Route::post('/my/purchases/{id}/confirm-delivery', [OrderController::class, 'confirmDelivery']);
     Route::post('/my/purchases/{id}/review', [OrderController::class, 'review']);
     Route::get('/my/sales', [OrderController::class, 'sales']);

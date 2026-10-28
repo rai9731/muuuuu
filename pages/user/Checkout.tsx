@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Barcode, CreditCard, Lock, MapPin, QrCode, ShieldCheck, Truck, Warehouse } from 'lucide-react';
+import { Lock, MapPin, QrCode, ShieldCheck, Truck, Warehouse } from 'lucide-react';
 import { orderService } from '@services/orderService';
 import { ApiError, errorMessage } from '@services/api';
 import type { DeliveryMethod, PaymentMethod } from '@services/types';
@@ -13,9 +13,7 @@ import { CowPlaceholder } from '@components/cow/CowPlaceholder';
 import { formatAge, formatCurrency, formatNumber, formatWeight } from '@utils/format';
 
 const PAYMENT_OPTIONS: { value: PaymentMethod; label: string; description: string; icon: typeof QrCode }[] = [
-  { value: 'pix', label: 'Pix', description: 'Aprovação na hora com QR Code ou copia e cola.', icon: QrCode },
-  { value: 'credit_card', label: 'Cartão de crédito', description: 'Você digita os dados no ambiente seguro do Asaas.', icon: CreditCard },
-  { value: 'boleto', label: 'Boleto', description: 'Compensação em até 3 dias úteis.', icon: Barcode },
+  { value: 'pix', label: 'Pix', description: 'Código Pix copia e cola; depois você confere o pagamento no pedido.', icon: QrCode },
 ];
 
 const DELIVERY_OPTIONS: { value: DeliveryMethod; label: string; description: string; icon: typeof Truck }[] = [
@@ -112,9 +110,14 @@ export default function Checkout() {
           <GlassCard>
             <h2 className="font-semibold">Forma de pagamento</h2>
             <RadioCards name="payment" value={payment} onChange={(v) => setPayment(v as PaymentMethod)} options={methods} />
+            {data.gateway_mode === 'sandbox' && (
+              <p className="mt-4 rounded-xl bg-trigo/15 p-3 text-xs text-grafite/80">
+                Ambiente de TESTE: a cobrança é criada no Asaas Sandbox. Nenhum pagamento real é feito e a confirmação no Sandbox não libera envio nem entrega do animal.
+              </p>
+            )}
             {data.simulated_gateway && (
               <p className="mt-4 rounded-xl bg-trigo/15 p-3 text-xs text-grafite/80">
-                Ambiente de demonstração: o Asaas ainda não está configurado, então a cobrança é simulada e pode ser confirmada no detalhe do pedido.
+                Ambiente de demonstração: a cobrança é SIMULADA (não passa pelo Asaas). A confirmação só acontece quando você conferir o pagamento no pedido.
               </p>
             )}
           </GlassCard>
@@ -124,14 +127,12 @@ export default function Checkout() {
           <GlassCard className="lg:sticky lg:top-24">
             <h2 className="font-semibold">Valores</h2>
             <dl className="mt-4 space-y-3 text-sm">
-              <div className="flex justify-between"><dt className="text-grafite/70">Valor da vaca</dt><dd className="font-semibold">{formatCurrency(data.price)}</dd></div>
-              <div className="flex justify-between">
-                <dt className="text-grafite/70">Taxa da plataforma ({formatNumber(data.commission_percent)}%)</dt>
-                <dd className="text-grafite/70">{formatCurrency(data.platform_fee)}</dd>
-              </div>
-              <p className="text-xs text-grafite/55">A taxa é descontada do repasse ao vendedor — você não paga nada a mais.</p>
+              <div className="flex justify-between"><dt className="text-grafite/70">Preço do anúncio</dt><dd className="font-semibold">{formatCurrency(data.price)}</dd></div>
+              <p className="text-xs text-grafite/55">
+                A taxa da plataforma ({formatNumber(data.commission_percent)}%) é descontada do repasse ao vendedor — você paga exatamente o preço do anúncio.
+              </p>
               <div className="flex justify-between border-t border-pasto/10 pt-3 text-base">
-                <dt className="font-semibold">Total</dt>
+                <dt className="font-semibold">Total a pagar</dt>
                 <dd className="text-2xl font-bold text-pasto">{formatCurrency(data.total)}</dd>
               </div>
             </dl>

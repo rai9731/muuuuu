@@ -22,6 +22,21 @@ class Order extends Model
         ];
     }
 
+    /** Gateways que NUNCA representam pagamento real: simulação local e Asaas Sandbox. */
+    public const TEST_GATEWAYS = ['simulated', 'asaas_sandbox'];
+
+    /** Pagamento de teste (simulado ou Sandbox): não pode avançar para envio nem entrega. */
+    public function hasTestPayment(): bool
+    {
+        return in_array($this->payment?->gateway, self::TEST_GATEWAYS, true);
+    }
+
+    /** Pedidos cujo pagamento NÃO é de teste (receita/comissão reais). */
+    public function scopeExcludingTestPayments($query)
+    {
+        return $query->whereDoesntHave('payment', fn ($p) => $p->whereIn('gateway', self::TEST_GATEWAYS));
+    }
+
     public function cow()
     {
         return $this->belongsTo(Cow::class)->withTrashed();

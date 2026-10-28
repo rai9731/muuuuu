@@ -3,7 +3,16 @@ export type CowStatus = 'pending' | 'active' | 'paused' | 'reserved' | 'sold' | 
 export type Purpose = 'leite' | 'corte' | 'reproducao';
 export type OrderStatus = 'awaiting_payment' | 'paid' | 'in_transit' | 'delivered' | 'cancelled';
 export type PaymentMethod = 'pix' | 'credit_card' | 'boleto';
-export type PaymentStatus = 'pending' | 'approved' | 'refused' | 'refunded';
+export type PaymentStatus = 'preparing' | 'creating' | 'uncertain' | 'pending' | 'divergent' | 'approved' | 'refused' | 'refunded';
+export type TestMode = 'simulation' | 'sandbox';
+export type CheckResult = 'confirmed' | 'pending' | 'divergent' | 'inconclusive' | 'not_found' | 'preparing';
+
+export interface JourneyStep {
+  key: string;
+  label: string;
+  state: 'done' | 'current' | 'todo' | 'warning';
+  note: string | null;
+}
 export type DeliveryMethod = 'freight' | 'pickup';
 export type PayoutStatus = 'not_applicable' | 'pending' | 'paid';
 
@@ -113,7 +122,13 @@ export interface PaymentInfo {
   invoice_url: string | null;
   paid_at: string | null;
   refunded_at: string | null;
+  gateway_status: string | null;
+  last_check_result: CheckResult | null;
+  last_checked_at: string | null;
+  confirmation_source: 'simulation' | 'asaas_sandbox' | null;
   simulated: boolean;
+  sandbox: boolean;
+  test_mode: TestMode | null;
   created_at: string;
 }
 
@@ -155,6 +170,7 @@ export interface Order {
   seller: PersonSummary;
   payment: PaymentInfo | null;
   timeline?: TimelineEvent[];
+  journey?: JourneyStep[];
   review?: { rating: number; comment: string | null; created_at: string } | null;
   conversation_id?: number | null;
 }
@@ -168,6 +184,7 @@ export interface CheckoutPreview {
   seller_amount: number;
   payment_methods: PaymentMethod[];
   simulated_gateway: boolean;
+  gateway_mode: TestMode;
 }
 
 export interface Message {
