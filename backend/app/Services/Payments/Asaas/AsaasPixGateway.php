@@ -8,7 +8,6 @@ use App\Services\Payments\GatewayUncertain;
 use App\Services\Payments\PixCharge;
 use App\Services\Payments\PixGateway;
 use Carbon\CarbonInterface;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -34,7 +33,12 @@ class AsaasPixGateway implements PixGateway
 
     private const CUSTOMER_STATE_KEY = 'asaas_sandbox_customer';
 
-    public function __construct(private readonly AsaasConfig $config, private readonly AsaasHttp $http) {}
+    private readonly BudgetLedger $ledger;
+
+    public function __construct(private readonly AsaasConfig $config, private readonly AsaasHttp $http, ?BudgetLedger $ledger = null)
+    {
+        $this->ledger = $ledger ?? new BudgetLedger(\Illuminate\Support\Facades\Cache::store());
+    }
 
     public function source(): string
     {
@@ -57,11 +61,10 @@ class AsaasPixGateway implements PixGateway
 
         // Uma criação por recurso (defesa adicional à regra de incerteza): uma segunda tentativa para a mesma referência
         // nunca envia outro POST, mesmo com orçamento sobrando. Só é liberada se NADA foi enviado (orçamento).
-        $guard = 'asaas:create-attempt:'.$reference;
         try {
-            $first = Cache::add($guard, now()->toIso8601String());
-        } catch (\Throwable) {
-            throw new GatewayRejected('Controle de criação indisponível; nada foi enviado.');
+            $first = $this->ledger->claimOnce($reference);
+        } catch (AsaasRefusedException $e) {
+            throw new GatewayRejected($e->getMessage());
         }
         $first || throw new GatewayUncertain('Já houve tentativa de criação desta cobrança; reconcilie, não recrie.');
 
@@ -72,7 +75,7 @@ class AsaasPixGateway implements PixGateway
                 'description' => 'Pedido de teste '.$reference,
             ]);
         } catch (AsaasRefusedException $e) {
-            Cache::forget($guard); // nada foi enviado
+            $this->ledger->release($reference); // nada foi enviado
             throw new GatewayRejected($e->getMessage());
         } catch (AsaasTransportException $e) { // inclui 4xx: enviada, resultado incerto
             throw new GatewayUncertain($e->getMessage());
@@ -226,10 +229,20 @@ class AsaasPixGateway implements PixGateway
      * Libera o estado incerto SOMENTE se a listagem acabou de ser completa, válida e vazia ("not_found"). A listagem
      * vazia não prova que não há criação ainda em andamento (ex.: estado `creating` de um processo vivo): quem executa
      * precisa confirmar isso antes. Ação humana explícita.
+     *
+     * Estado `creating` NUNCA é liberado aqui: pode ser uma criação em andamento (a reconciliação por leitura continua
+     * possível e pode adotar um cliente encontrado). Só `uncertain` (resultado já perdido) é elegível, e o estado é relido
+     * logo antes da limpeza.
      */
     public function releaseUncertainCustomer(): bool
     {
+        if (($this->customerState()['state'] ?? null) !== 'uncertain') {
+            return false; // sem listagem: nem consome orçamento
+        }
         if ($this->reconcileCustomer() !== 'not_found') {
+            return false;
+        }
+        if (($this->customerState()['state'] ?? null) !== 'uncertain') {
             return false;
         }
         $this->setCustomerState(null);

@@ -18,12 +18,17 @@ class AsaasHttp
 {
     private const PATH = '#^/(customers|payments)(/[A-Za-z0-9_]+(/pixQrCode)?)?$#';
 
-    public function __construct(private readonly AsaasConfig $config) {}
+    private readonly BudgetLedger $ledger;
+
+    public function __construct(private readonly AsaasConfig $config, ?BudgetLedger $ledger = null)
+    {
+        $this->ledger = $ledger ?? new BudgetLedger(Cache::store());
+    }
 
     /** @return array<string,int> requisições já feitas por operação */
     public function ledger(): array
     {
-        return collect(AsaasConfig::OPERATIONS)->mapWithKeys(fn ($op) => [$op => (int) Cache::get("asaas:ledger:{$op}", 0)])->all();
+        return collect(AsaasConfig::OPERATIONS)->mapWithKeys(fn ($op) => [$op => $this->ledger->used($op)])->all();
     }
 
     /**
@@ -37,7 +42,7 @@ class AsaasHttp
         in_array($op, AsaasConfig::OPERATIONS, true) || throw new AsaasRefusedException('Operação desconhecida.');
         preg_match(self::PATH, $path) === 1 || throw new AsaasRefusedException('Caminho não permitido.');
 
-        $this->reserve($op);
+        $this->ledger->reserve($op, $this->config->budget[$op]);
 
         $options = array_filter(['query' => $query ?: null, 'json' => $json]);
         try {
@@ -69,34 +74,5 @@ class AsaasHttp
         is_array($body) || throw new AsaasTransportException('Resposta sem JSON válido.');
 
         return $body;
-    }
-
-    /**
-     * Reserva uma unidade do orçamento ANTES do envio: incrementa e só então compara. Falha fechado: erro do cache,
-     * retorno que não seja inteiro positivo ou estouro do teto => nenhuma requisição. Se a devolução da unidade
-     * falhar, o contador fica alto (erra para o lado seguro). Atomicidade entre processos depende do driver
-     * (AsaasConfig::ATOMIC_CACHE_DRIVERS); o contador vive no cache e `cache:clear` o zera.
-     *
-     * @throws AsaasRefusedException nada foi enviado
-     */
-    private function reserve(string $op): void
-    {
-        $key = "asaas:ledger:{$op}";
-        try {
-            Cache::add($key, 0);
-            $used = Cache::increment($key);
-        } catch (\Throwable) {
-            throw new AsaasRefusedException('Contador de orçamento indisponível; nada foi enviado.');
-        }
-        if (! is_int($used) || $used < 1) {
-            throw new AsaasRefusedException('Contador de orçamento inválido; nada foi enviado.');
-        }
-        if ($used > $this->config->budget[$op]) {
-            try {
-                Cache::decrement($key);
-            } catch (\Throwable) {
-            }
-            throw new AsaasRefusedException("Orçamento de requisições '{$op}' esgotado.");
-        }
     }
 }

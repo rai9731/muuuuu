@@ -12,7 +12,7 @@ use Illuminate\Console\Command;
  */
 class AsaasReconcileCustomer extends Command
 {
-    protected $signature = 'asaas:reconcile-customer {--release-if-not-found : libera o estado incerto SOMENTE se a listagem concluir que o cliente não existe}';
+    protected $signature = 'asaas:reconcile-customer {--release-if-not-found : libera o estado `uncertain` SOMENTE se a listagem (completa, válida e vazia) concluir que o cliente não existe; nunca libera `creating`}';
 
     protected $description = 'Reconcilia o cliente de teste do Asaas Sandbox em estado incerto (nunca cria cliente).';
 
@@ -28,7 +28,7 @@ class AsaasReconcileCustomer extends Command
         if ($this->option('release-if-not-found')) {
             $this->warn('Só libere se tiver confirmado que nenhuma criação de cliente está em andamento (uma listagem vazia não prova isso).');
             $released = $gateway->releaseUncertainCustomer();
-            $this->line($released ? 'Cliente não encontrado: estado liberado (nenhum cliente foi criado).' : 'Não liberado: a reconciliação não concluiu "não encontrado".');
+            $this->line($released ? 'Cliente não encontrado: estado liberado (nenhum cliente foi criado).' : 'Não liberado: só o estado `uncertain` é elegível, e a listagem precisa ser completa, válida e vazia (estado `creating` nunca é liberado).');
         } else {
             $this->line('Resultado: '.$gateway->reconcileCustomer());
         }

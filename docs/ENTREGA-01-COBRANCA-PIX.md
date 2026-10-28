@@ -173,3 +173,22 @@ Escopo: revisão do código e dos testes da candidata (`77f18a4`, `6536cc7`) ant
 **B1 — regressão.** `test_reserva_do_orcamento_nao_depende_de_leitura_defasada` usa um cache cuja leitura é defasada (simula outro processo) e incremento real. Na versão de `6536cc7` (leitura e gravação separadas) o teste **falha**: 6 requisições enviadas em vez de 2 (`Failed asserting that 6 is identical to 2`); o teste sequencial anterior passava nas duas versões. Na versão atual passa. Demonstração feita trocando temporariamente o arquivo pela versão de `6536cc7` e restaurando-o.
 
 **Testes:** `vendor/bin/phpunit` (isolado pelo `TestCase`, SQLite em memória, HTTP falso): OK (101 tests, 532 assertions). Limites: o `AsaasFakeServer` segue com contrato presumido; sem teste concorrente real; telas não verificadas visualmente.
+
+---
+
+## Pacote S1–S3 (28/10/2026): contador de orçamento, cliente em `creating`, procedimento da janela
+
+**S1 — inicialização do contador.** `Cache::add($key, 0)` sem TTL cai em `get` + `put` no `Repository` do Laravel (não atômico) e podia recolocar o contador em zero após o incremento de outro processo. Agora a lógica está em `BudgetLedger`: incrementa; se o contador não existe, cria com `add($key, 1, TTL)` (com TTL o `Repository` delega ao `add` do driver: `INSERT IGNORE` no database, `SET NX` no redis, `add` no memcached; nunca sobrescreve) e quem perde a corrida incrementa. A trava "uma criação por referência" tinha o mesmo defeito e passou a usar `add` com TTL.
+- **Driver efetivo:** o container ativo exporta `CACHE_STORE=database` e `DB_CONNECTION=mysql` (lidos do ambiente do processo, não do `.env`). O adaptador usaria, portanto, o cache `database` sobre MySQL.
+- **Exercitado:** (a) dois testes determinísticos com um cache que reproduz o intercalamento (contador final 4 em vez de 1; segundo POST bloqueado em vez de enviado); (b) `BudgetLedgerRaceTest`: 8 processos reais, 6 reservas cada, teto 10, no `DatabaseStore` real do Laravel sobre um arquivo SQLite temporário, sem framework, `.env`, MySQL ou rede. Resultado: exatamente 10 concedidas, contador 10, 0 erros.
+- **NÃO comprovado:** a semântica do MySQL (`INSERT IGNORE`, `lockForUpdate` sob InnoDB). O SQLite serializa escritas no arquivo inteiro e ignora `lockForUpdate`. Não foi feito teste no MySQL (sem acesso ao banco operacional). A atomicidade entre processos no driver real continua uma premissa a provar. Alternativa operacional: janela com **um único processo** servindo requisições (sem concorrência), até que o MySQL seja verificado em ambiente descartável.
+
+**S3 — cliente em `creating`.** `releaseUncertainCustomer()` e `--release-if-not-found` só aceitam o estado `uncertain`; `creating` nunca é liberado (nem lista, nem consome orçamento). A reconciliação por leitura (`reconcileCustomer`) continua funcionando e adota um cliente correspondente. **Conflito funcional a decidir:** um processo que morra com o estado `creating` deixa o cliente de teste bloqueado sem liberação pelo comando. Não criei regra substituta. Saída possível, a decidir por Rogers: intervenção manual explícita (limpar a linha `asaas_sandbox_customer`) após confirmar no painel do Sandbox que nenhum cliente de teste foi criado, ou um tempo máximo para `creating` definido por decisão de negócio.
+
+**S2 — procedimento de uma eventual janela (condições).**
+1. Não executar `cache:clear` nem reiniciar/esvaziar o cache durante a janela: o contador e a trava de criação vivem no cache; perda, expiração (TTL de 10 anos) ou limpeza **reabre** o orçamento e a trava. A trava em cache não é durável.
+2. Registrar o driver efetivo (`config('cache.default')`) antes de começar.
+3. Registrar os contadores (`asaas:reconcile-customer` imprime `ledger`) no início e no fim, e conferir contra o log de requisições.
+4. Executar com um único processo atendendo requisições, enquanto a atomicidade no MySQL não for provada.
+
+**Testes executados nesta etapa** (container local, `TestCase` isolado: SQLite em memória, `ASAAS_*` zerado, HTTP falso; o teste multiprocesso usa arquivo SQLite temporário): `vendor/bin/phpunit` completo OK (106 tests, 573 assertions). Regressão: com `AsaasHttp` e `AsaasPixGateway` de `1613d28` os 3 testes novos falham (`1 is identical to 4`, `1 is identical to 0`, `true is false`). Limites: o isolamento de rede do container não foi estabelecido (só o cliente HTTP do Laravel é barrado); o `AsaasFakeServer` presume o contrato do Asaas.

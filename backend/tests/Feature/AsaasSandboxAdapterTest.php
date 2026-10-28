@@ -766,6 +766,12 @@ class AsaasSandboxAdapterTest extends TestCase
 
                     return parent::increment($key, $value);
                 }
+
+                public function add($key, $value, $seconds)
+                {
+                    // contador inutilizável: nem existe (increment => false) nem pode ser criado
+                    return str_starts_with($key, 'asaas:ledger:') && $this->modo === 'falso' ? false : parent::add($key, $value, $seconds);
+                }
             }));
             config(['cache.stores.'.$driver => ['driver' => $driver], 'cache.default' => $driver]);
             $srv = AsaasFakeServer::install();
@@ -799,6 +805,112 @@ class AsaasSandboxAdapterTest extends TestCase
         config(['cache.default' => 'database', 'cache.stores.database.driver' => 'database']);
         $this->assertInstanceOf(AsaasConfig::class, AsaasConfig::fromConfig());
         Http::assertNothingSent();
+    }
+
+    /** Cache cujo "outro processo" grava uma chave entre a verificação de existência e a escrita (visão defasada). */
+    private function cacheComCorrida(): object
+    {
+        $store = new class extends \Illuminate\Cache\ArrayStore {
+            public array $plant = [];
+
+            private function maybePlant(string $key): bool
+            {
+                if (! array_key_exists($key, $this->plant)) {
+                    return false;
+                }
+                parent::forever($key, $this->plant[$key]);
+                unset($this->plant[$key]);
+
+                return true;
+            }
+
+            public function get($key)
+            {
+                return $this->maybePlant($key) ? null : parent::get($key); // ainda "não existia" para quem perguntou
+            }
+
+            public function increment($key, $value = 1)
+            {
+                return $this->maybePlant($key) ? false : parent::increment($key, $value);
+            }
+
+            /** Como INSERT IGNORE / SET NX: atômico, enxerga a linha que o outro processo acabou de criar e não sobrescreve. */
+            public function add($key, $value, $seconds)
+            {
+                $this->maybePlant($key);
+
+                return isset($this->storage[$key]) ? false : $this->put($key, $value, $seconds);
+            }
+        };
+        Cache::extend('corrida', fn () => Cache::repository($store));
+        config(['cache.stores.corrida' => ['driver' => 'corrida'], 'cache.default' => 'corrida']);
+
+        return $store;
+    }
+
+    public function test_inicializacao_do_contador_nao_sobrescreve_o_incremento_de_outro_processo(): void
+    {
+        // Antes (add sem TTL = get + put): o contador era recolocado em 0 e o resultado final era 1. Agora: 4.
+        $store = $this->cacheComCorrida();
+        AsaasFakeServer::install();
+        $this->configure(['budget' => ['payment_get' => 5]]);
+        $c = $this->create();
+
+        $store->plant = ['asaas:ledger:payment_get' => 3]; // outro processo já havia contado 3 consultas
+        $this->gw()->getCharge($c->id);
+
+        $this->assertSame(4, $this->gw()->ledger()['payment_get']);
+    }
+
+    public function test_trava_de_criacao_nao_sobrescreve_a_de_outro_processo(): void
+    {
+        // Antes: a trava era escrita por cima da do outro processo e o POST saía de novo. Agora: nenhum POST.
+        $store = $this->cacheComCorrida();
+        $srv = AsaasFakeServer::install();
+        $this->configure(['budget' => ['payment_create' => 5]]);
+        $store->plant = ['asaas:create-attempt:'.self::REF => 'outro-processo'];
+
+        $this->expectException(GatewayUncertain::class);
+        try {
+            $this->create();
+        } finally {
+            $this->assertSame(0, $srv->count('POST', '/payments'));
+        }
+    }
+
+    public function test_estado_creating_nunca_e_liberado_mas_pode_ser_reconciliado_por_leitura(): void
+    {
+        $srv = AsaasFakeServer::install();
+        $this->createCustomerConfig(['customer_create' => 1, 'customer_list' => 5, 'payment_create' => 2, 'qr' => 2]);
+        Setting::write('asaas_sandbox_customer', ['state' => 'creating']); // ex.: processo morreu ou ainda está criando
+
+        // Liberação: recusada sem sequer listar (nenhuma requisição, nenhum orçamento consumido).
+        $this->assertFalse($this->gw()->releaseUncertainCustomer());
+        $this->assertSame('creating', $this->gw()->customerStatus());
+        $this->assertCount(0, $srv->log);
+        $this->assertSame(0, $this->gw()->ledger()['customer_list']);
+
+        // Mesmo com listagem vazia (pareceria "não encontrado"), o comando não libera.
+        $this->artisan('asaas:reconcile-customer', ['--release-if-not-found' => true])->expectsOutputToContain('Não liberado')->assertExitCode(0);
+        $this->assertSame('creating', $this->gw()->customerStatus());
+        $this->assertSame(0, $srv->count('POST', '/customers'));
+
+        // Reconciliação por leitura continua possível: um cliente correspondente é adotado.
+        $srv->customers = ['cus_NOVO0001' => ['object' => 'customer', 'id' => 'cus_NOVO0001', 'name' => 'Cliente de Teste Ficticio', 'cpfCnpj' => '00000000000', 'externalReference' => AsaasConfig::CUSTOMER_REFERENCE, 'deleted' => false]];
+        $this->assertSame('ready', $this->gw()->reconcileCustomer());
+        $this->assertSame(0, $srv->count('POST', '/customers'));
+    }
+
+    public function test_so_o_estado_uncertain_e_elegivel_para_liberacao(): void
+    {
+        $srv = AsaasFakeServer::install(['customer_create' => 'timeout_lost']);
+        $this->createCustomerConfig(['customer_create' => 2, 'customer_list' => 5, 'payment_create' => 2, 'qr' => 2]);
+        try {
+            $this->create();
+        } catch (GatewayRejected) {
+        }
+        $this->assertSame('uncertain', $this->gw()->customerStatus());
+        $this->assertTrue($this->gw()->releaseUncertainCustomer());
     }
 
     public function test_orcamento_esgotado_mantem_o_contador_no_limite(): void
