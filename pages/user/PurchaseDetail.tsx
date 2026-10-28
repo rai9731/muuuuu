@@ -103,7 +103,7 @@ export default function PurchaseDetail() {
     try {
       const res = await orderService.checkPayment(order!.id);
       setData(res.data);
-      if (res.check.result === 'confirmed') toast.success(res.check.simulated ? 'Confirmação simulada' : 'Pagamento confirmado', res.check.message);
+      if (res.check.result === 'confirmed') toast.success(res.check.test_mode === 'sandbox' ? 'Confirmado no Sandbox (teste)' : res.check.simulated ? 'Confirmação simulada' : 'Pagamento confirmado', res.check.message);
       else if (res.check.result === 'pending') toast.info('Ainda não confirmado', res.check.message);
       else toast.warning('Conferência sem confirmação', res.check.message);
     } catch (err) {
@@ -205,6 +205,11 @@ export default function PurchaseDetail() {
                     </a>
                   )}
                   {payment.due_date && <p className="mt-3 text-xs text-grafite/60">Vencimento: {formatDate(payment.due_date)}. Se não for pago, o pedido é cancelado e a vaca volta para a vitrine.</p>}
+                  {payment.sandbox && (
+                    <div className="mt-4 rounded-2xl bg-trigo/15 p-4">
+                      <p className="text-sm text-grafite/80">TESTE: esta cobrança é do Asaas Sandbox. Nenhum pagamento real é feito. Depois de pagar no Sandbox, clique em "Conferir pagamento".</p>
+                    </div>
+                  )}
                   {payment.simulated && (
                     <div className="mt-4 rounded-2xl bg-trigo/15 p-4">
                       <p className="text-sm text-grafite/80">SIMULAÇÃO: esta cobrança existe só no gateway de demonstração. Nada foi cobrado nem pago no Asaas.</p>
@@ -218,7 +223,7 @@ export default function PurchaseDetail() {
               )}
               {payment.paid_at && (
                 <p className="mt-3 text-sm text-grafite/70">
-                  {payment.confirmation_source === 'simulation' ? 'Confirmação simulada em ' : 'Confirmado em '}{formatDateTime(payment.paid_at)}
+                  {payment.confirmation_source === 'simulation' ? 'Confirmação simulada em ' : payment.confirmation_source === 'asaas_sandbox' ? 'Confirmação no Sandbox (teste, não é pagamento real) em ' : 'Confirmado em '}{formatDateTime(payment.paid_at)}
                 </p>
               )}
             </GlassCard>
@@ -227,13 +232,15 @@ export default function PurchaseDetail() {
           <GlassCard>
             <h3 className="mb-5 font-semibold">Acompanhamento</h3>
             {order.timeline && <Timeline events={order.timeline} />}
-            {payment?.simulated && order.status === 'paid' && (
+            {payment?.test_mode && order.status === 'paid' && (
               <p className="mt-4 rounded-xl bg-trigo/15 p-3 text-xs text-grafite/80">
-                Pedido de demonstração: com pagamento simulado, o pedido não avança para envio nem entrega.
+                {payment.test_mode === 'sandbox'
+                  ? 'Pedido de teste: pagamento confirmado no Asaas Sandbox (não é pagamento real); o pedido não avança para envio nem entrega.'
+                  : 'Pedido de demonstração: com pagamento simulado, o pedido não avança para envio nem entrega.'}
               </p>
             )}
             <div className="mt-6 flex flex-wrap gap-2">
-              {['paid', 'in_transit'].includes(order.status) && !payment?.simulated && (
+              {['paid', 'in_transit'].includes(order.status) && !payment?.test_mode && (
                 <Button icon={<PackageCheck className="h-4 w-4" />} onClick={() => setConfirmOpen(true)}>Confirmar recebimento</Button>
               )}
               {order.status === 'delivered' && !order.review && (

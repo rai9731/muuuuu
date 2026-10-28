@@ -4,6 +4,7 @@ export type Purpose = 'leite' | 'corte' | 'reproducao';
 export type OrderStatus = 'awaiting_payment' | 'paid' | 'in_transit' | 'delivered' | 'cancelled';
 export type PaymentMethod = 'pix' | 'credit_card' | 'boleto';
 export type PaymentStatus = 'preparing' | 'creating' | 'uncertain' | 'pending' | 'divergent' | 'approved' | 'refused' | 'refunded';
+export type TestMode = 'simulation' | 'sandbox';
 export type CheckResult = 'confirmed' | 'pending' | 'divergent' | 'inconclusive' | 'not_found' | 'preparing';
 
 export interface JourneyStep {
@@ -126,6 +127,8 @@ export interface PaymentInfo {
   last_checked_at: string | null;
   confirmation_source: 'simulation' | 'asaas_sandbox' | null;
   simulated: boolean;
+  sandbox: boolean;
+  test_mode: TestMode | null;
   created_at: string;
 }
 
@@ -181,6 +184,7 @@ export interface CheckoutPreview {
   seller_amount: number;
   payment_methods: PaymentMethod[];
   simulated_gateway: boolean;
+  gateway_mode: TestMode;
 }
 
 export interface Message {

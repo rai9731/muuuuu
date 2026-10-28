@@ -25,7 +25,7 @@ class AdminController extends Controller
     public function dashboard(Request $request)
     {
         $orders = $this->period(Order::query(), $request);
-        $paid = (clone $orders)->whereIn('status', self::PAID)->excludingSimulated(); // simulação não é receita real
+        $paid = (clone $orders)->whereIn('status', self::PAID)->excludingTestPayments(); // simulação e Sandbox não são receita real
         $paidOrders = (clone $paid)->with(['cow.breed', 'seller'])->get();
 
         return ['data' => [
@@ -51,7 +51,7 @@ class AdminController extends Controller
 
     public function reports(Request $request)
     {
-        $paid = $this->period(Order::query(), $request)->whereIn('status', self::PAID)->excludingSimulated()->with(['cow.breed', 'seller'])->get();
+        $paid = $this->period(Order::query(), $request)->whereIn('status', self::PAID)->excludingTestPayments()->with(['cow.breed', 'seller'])->get();
         $count = $paid->count();
 
         return ['data' => [

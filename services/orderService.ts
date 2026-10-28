@@ -1,5 +1,5 @@
 import { api } from './api';
-import type { CheckResult, CheckoutPreview, DeliveryMethod, Order, Paginated, PaymentMethod, UserDashboard } from './types';
+import type { CheckResult, CheckoutPreview, TestMode, DeliveryMethod, Order, Paginated, PaymentMethod, UserDashboard } from './types';
 
 export const orderService = {
   dashboard: () => api.get<{ data: UserDashboard }>('/dashboard').then((r) => r.data),
@@ -17,7 +17,7 @@ export const orderService = {
   review: (id: number, rating: number, comment: string) =>
     api.post<{ data: Order; message: string }>(`/my/purchases/${id}/review`, { rating, comment }),
   checkPayment: (id: number) =>
-    api.post<{ data: Order; check: { result: CheckResult; message: string; simulated: boolean } }>(`/my/purchases/${id}/check-payment`),
+    api.post<{ data: Order; check: { result: CheckResult; message: string; simulated: boolean; test_mode: TestMode | null } }>(`/my/purchases/${id}/check-payment`),
   simulatePayment: (id: number) => api.post<{ data: Order; message: string }>(`/my/purchases/${id}/simulate-payment`),
 
   // ─── Vendas ───

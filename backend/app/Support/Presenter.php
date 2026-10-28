@@ -124,7 +124,9 @@ class Presenter
             'gateway_status' => $p->gateway_status, 'last_check_result' => $p->last_check_result,
             'last_checked_at' => $p->last_checked_at?->toIso8601String(), 'confirmation_source' => $p->confirmation_source, 'boleto_url' => $p->boleto_url, 'invoice_url' => $p->invoice_url,
             'paid_at' => $p->paid_at?->toIso8601String(), 'refunded_at' => $p->refunded_at?->toIso8601String(),
-            'simulated' => $p->gateway === 'simulated', 'created_at' => $p->created_at->toIso8601String(),
+            'simulated' => $p->gateway === 'simulated', 'sandbox' => $p->gateway === 'asaas_sandbox',
+            'test_mode' => match ($p->gateway) { 'simulated' => 'simulation', 'asaas_sandbox' => 'sandbox', default => null },
+            'created_at' => $p->created_at->toIso8601String(),
         ];
     }
 
@@ -148,7 +150,11 @@ class Presenter
             $st === 'divergent' && $p->gateway_id => $step('awaiting', 'Aguardando pagamento', 'warning', 'Divergência na última conferência; nada foi confirmado.'),
             default => $step('awaiting', 'Aguardando pagamento', 'todo'),
         };
-        $note = $paid ? ($p->confirmation_source === 'simulation' ? 'Confirmação SIMULADA (gateway de demonstração), não é pagamento real.' : 'Confirmado pelo gateway após validação de cobrança, pedido e valor.') : null;
+        $note = $paid ? match ($p->confirmation_source) {
+            'simulation' => 'Confirmação SIMULADA (gateway de demonstração), não é pagamento real.',
+            'asaas_sandbox' => 'Confirmado no Asaas SANDBOX (teste): não é pagamento real nem receita real.',
+            default => 'Confirmado pelo gateway após validação de cobrança, pedido e valor.',
+        } : null;
 
         return [
             $step('order', 'Venda registrada', 'done', '#'.$o->code),
@@ -178,7 +184,7 @@ class Presenter
             $data['journey'] = self::journey($o);
             $data['timeline'] = [
                 $step('created', 'Pedido criado', $o->created_at, true),
-                $step('paid', $o->payment?->gateway === 'simulated' ? 'Pagamento confirmado (SIMULADO)' : 'Pagamento confirmado', $o->paid_at, $o->paid_at !== null),
+                $step('paid', match ($o->payment?->gateway) { 'simulated' => 'Pagamento confirmado (SIMULADO)', 'asaas_sandbox' => 'Pagamento confirmado (SANDBOX — teste)', default => 'Pagamento confirmado' }, $o->paid_at, $o->paid_at !== null),
                 $step('in_transit', 'Animal enviado', $o->shipped_at, $o->shipped_at !== null),
                 $step('delivered', 'Entrega confirmada', $o->delivered_at, $o->delivered_at !== null),
             ];

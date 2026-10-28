@@ -46,6 +46,23 @@ return [
         'url' => env('ASAAS_API_URL', 'https://sandbox.asaas.com/api/v3'),
         'key' => env('ASAAS_API_KEY'),
         'webhook_token' => env('ASAAS_WEBHOOK_TOKEN'),
+        // Só o adaptador do SANDBOX usa estes valores, e só com PAYMENT_GATEWAY=asaas_sandbox. Nada disso tem padrão ativo.
+        'sandbox_authorized' => env('ASAAS_SANDBOX_AUTHORIZED', false),
+        'timeout' => env('ASAAS_TIMEOUT', 10),
+        'test_customer' => [
+            'id' => env('ASAAS_TEST_CUSTOMER_ID'),
+            'name' => env('ASAAS_TEST_CUSTOMER_NAME'),
+            'document' => env('ASAAS_TEST_CUSTOMER_DOCUMENT'),
+        ],
+        // Orçamento de requisições HTTP por operação (inteiro; ausente ou 0 = bloqueado).
+        'budget' => [
+            'customer_create' => env('ASAAS_BUDGET_CUSTOMER_CREATE'),
+            'customer_list' => env('ASAAS_BUDGET_CUSTOMER_LIST'),
+            'payment_create' => env('ASAAS_BUDGET_PAYMENT_CREATE'),
+            'qr' => env('ASAAS_BUDGET_QR'),
+            'payment_get' => env('ASAAS_BUDGET_PAYMENT_GET'),
+            'payment_list' => env('ASAAS_BUDGET_PAYMENT_LIST'),
+        ],
     ],
 
 ];

@@ -110,6 +110,11 @@ export default function Checkout() {
           <GlassCard>
             <h2 className="font-semibold">Forma de pagamento</h2>
             <RadioCards name="payment" value={payment} onChange={(v) => setPayment(v as PaymentMethod)} options={methods} />
+            {data.gateway_mode === 'sandbox' && (
+              <p className="mt-4 rounded-xl bg-trigo/15 p-3 text-xs text-grafite/80">
+                Ambiente de TESTE: a cobrança é criada no Asaas Sandbox. Nenhum pagamento real é feito e a confirmação no Sandbox não libera envio nem entrega do animal.
+              </p>
+            )}
             {data.simulated_gateway && (
               <p className="mt-4 rounded-xl bg-trigo/15 p-3 text-xs text-grafite/80">
                 Ambiente de demonstração: a cobrança é SIMULADA (não passa pelo Asaas). A confirmação só acontece quando você conferir o pagamento no pedido.

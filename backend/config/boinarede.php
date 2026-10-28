@@ -31,7 +31,7 @@ return [
     // Dias para vencimento de Pix/boleto; depois disso o pedido é cancelado e a vaca volta à vitrine (RN04)
     'payment_due_days' => 3,
 
-    // Gateway de Pix. Padrão 'simulated' (nada externo). Ainda não existe adaptador do Asaas.
+    // Gateway de Pix: 'simulated' (padrão, nada externo) ou 'asaas_sandbox' (exige configuração completa e explícita).
     'payment_gateway' => env('PAYMENT_GATEWAY', 'simulated'),
 
     'mail_enabled' => filter_var(env('MAIL_ENABLED', false), FILTER_VALIDATE_BOOL),

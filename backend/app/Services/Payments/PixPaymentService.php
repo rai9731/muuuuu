@@ -33,6 +33,16 @@ class PixPaymentService
         return $this->gateway;
     }
 
+    /** Valor gravado em payments.gateway para o gateway ativo (distingue simulação, Sandbox e o futuro real). */
+    public function gatewayName(): string
+    {
+        return match ($this->gateway->source()) {
+            'simulation' => 'simulated',
+            'asaas_sandbox' => 'asaas_sandbox',
+            default => throw new \LogicException('Origem de gateway desconhecida.'),
+        };
+    }
+
     /** Cria a cobrança uma única vez. Chamada após o commit do pedido (sem segurar lock durante a chamada externa). */
     public function ensureCharge(Payment $payment): Payment
     {
@@ -79,6 +89,10 @@ class PixPaymentService
         }
         if ($order->status !== 'awaiting_payment') {
             return $payment->status === 'approved' ? self::CONFIRMED : self::PENDING;
+        }
+        // O pedido foi criado por outro gateway (ex.: simulado) e o ativo agora é outro: não consulta nem confirma.
+        if ($payment->gateway !== $this->gatewayName()) {
+            return self::INCONCLUSIVE;
         }
 
         $result = match ($payment->status) {
@@ -177,6 +191,10 @@ class PixPaymentService
             $note = '#'.$order->code.' · demonstração local, nenhum pagamento real';
             Notifier::to($order->buyer_id, 'payment_confirmed', 'Confirmação SIMULADA do pagamento', $note, ['order_id' => $order->id, 'simulated' => true]);
             Notifier::to($order->seller_id, 'payment_confirmed', 'Pagamento SIMULADO — não envie o animal', $note, ['order_id' => $order->id, 'simulated' => true]);
+        } elseif ($this->gateway->source() === 'asaas_sandbox') {
+            $note = '#'.$order->code.' · cobrança de TESTE no Asaas Sandbox, nenhum pagamento real';
+            Notifier::to($order->buyer_id, 'payment_confirmed', 'Pagamento confirmado no SANDBOX (teste)', $note, ['order_id' => $order->id, 'sandbox' => true]);
+            Notifier::to($order->seller_id, 'payment_confirmed', 'Pagamento de TESTE (Sandbox) — não envie o animal', $note, ['order_id' => $order->id, 'sandbox' => true]);
         } else {
             Notifier::to($order->buyer_id, 'payment_confirmed', 'Pagamento confirmado', '#'.$order->code, ['order_id' => $order->id]);
             Notifier::to($order->seller_id, 'payment_confirmed', 'Pagamento confirmado — envie o animal', '#'.$order->code, ['order_id' => $order->id]);

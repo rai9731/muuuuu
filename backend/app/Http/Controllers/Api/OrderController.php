@@ -21,7 +21,9 @@ class OrderController extends Controller
 
     private const SIMULATED_CONFIRMED = 'Confirmação SIMULADA (demonstração local): nenhum pagamento real foi feito nem observado no Asaas.';
 
-    private const SIMULATED_BLOCK = 'Pagamento simulado (demonstração): este pedido não avança para envio ou entrega.';
+    private const SIMULATED_BLOCK = 'Pagamento de teste (simulado ou Asaas Sandbox): este pedido não avança para envio ou entrega.';
+
+    private const SANDBOX_CONFIRMED = 'Pagamento confirmado no Asaas SANDBOX (TESTE): não é pagamento real nem receita real.';
 
     private const CHECK_MESSAGES = [
         'confirmed' => 'Pagamento conferido e confirmado.',
@@ -43,7 +45,7 @@ class OrderController extends Controller
                 'cows_listed' => Cow::where('user_id', $u->id)->whereIn('status', ['active', 'paused', 'reserved'])->count(),
                 'cows_sold' => Order::where('seller_id', $u->id)->where('status', 'delivered')->count(),
                 'purchases' => Order::where('buyer_id', $u->id)->count(),
-                'total_sold' => (float) Order::where('seller_id', $u->id)->whereIn('status', ['paid', 'in_transit', 'delivered'])->excludingSimulated()->sum('seller_amount'),
+                'total_sold' => (float) Order::where('seller_id', $u->id)->whereIn('status', ['paid', 'in_transit', 'delivered'])->excludingTestPayments()->sum('seller_amount'),
             ],
             'latest_cows' => Cow::with(['breed', 'media'])->where('user_id', $u->id)->latest()->limit(4)->get()
                 ->map(fn ($c) => Presenter::cow($c))->all(),
@@ -58,6 +60,7 @@ class OrderController extends Controller
 
         return ['data' => ['cow' => Presenter::cowDetail($cow, $request->user())] + $this->amounts($cow->price) + [
             'payment_methods' => ['pix'], 'simulated_gateway' => $this->pix->gateway()->source() === 'simulation',
+            'gateway_mode' => $this->pix->gateway()->source() === 'asaas_sandbox' ? 'sandbox' : 'simulation',
         ]];
     }
 
@@ -91,7 +94,7 @@ class OrderController extends Controller
             ]);
             Payment::create([
                 'order_id' => $order->id, 'payer_id' => $request->user()->id,
-                'gateway' => $this->pix->gateway()->source() === 'simulation' ? 'simulated' : 'asaas',
+                'gateway' => $this->pix->gatewayName(),
                 'method' => $data['payment_method'], 'status' => 'preparing', 'amount' => $amounts['total'],
                 'due_date' => now()->addDays(config('boinarede.payment_due_days')),
             ]);
@@ -145,13 +148,19 @@ class OrderController extends Controller
     {
         $order = $this->mine($request, $id, 'buyer_id');
         $result = $this->pix->check($order);
-        $simulated = $this->pix->gateway()->source() === 'simulation';
+        $mode = match ($this->pix->gateway()->source()) {
+            'simulation' => 'simulation',
+            'asaas_sandbox' => 'sandbox',
+            default => null,
+        };
+        $simulated = $mode === 'simulation';
 
         return [
             'data' => Presenter::order($this->load($order), true),
             'check' => [
-                'result' => $result, 'simulated' => $simulated,
-                'message' => ($result === 'confirmed' && $simulated) ? self::SIMULATED_CONFIRMED : (self::CHECK_MESSAGES[$result] ?? ''),
+                'result' => $result, 'simulated' => $simulated, 'test_mode' => $mode,
+                'message' => $result === 'confirmed' && $mode === 'simulation' ? self::SIMULATED_CONFIRMED
+                    : ($result === 'confirmed' && $mode === 'sandbox' ? self::SANDBOX_CONFIRMED : (self::CHECK_MESSAGES[$result] ?? '')),
             ],
         ];
     }
@@ -159,7 +168,7 @@ class OrderController extends Controller
     public function ship(Request $request, int $id)
     {
         $order = $this->mine($request, $id, 'seller_id');
-        abort_if($order->hasSimulatedPayment(), 422, self::SIMULATED_BLOCK);
+        abort_if($order->hasTestPayment(), 422, self::SIMULATED_BLOCK);
         abort_unless($order->status === 'paid', 422, 'O pagamento ainda não foi confirmado.');
         $order->update(['status' => 'in_transit', 'shipped_at' => now()]);
 
@@ -171,7 +180,7 @@ class OrderController extends Controller
     public function confirmDelivery(Request $request, int $id)
     {
         $order = $this->mine($request, $id, 'buyer_id');
-        abort_if($order->hasSimulatedPayment(), 422, self::SIMULATED_BLOCK);
+        abort_if($order->hasTestPayment(), 422, self::SIMULATED_BLOCK);
         abort_unless($order->status === 'in_transit', 422, 'O animal ainda não foi enviado.');
 
         DB::transaction(function () use ($order) {

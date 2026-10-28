@@ -99,10 +99,12 @@ export default function MySales() {
             loading={loading}
             actions={(o) => (
               <>
-                {o.status === 'paid' && o.payment?.simulated && (
-                  <span className="text-xs font-semibold text-grafite/60">Simulado: não enviar</span>
+                {o.status === 'paid' && o.payment?.test_mode && (
+                  <span className="text-xs font-semibold text-grafite/60">
+                    {o.payment.test_mode === 'sandbox' ? 'Pagamento de teste (Sandbox): não enviar' : 'Simulado: não enviar'}
+                  </span>
                 )}
-                {o.status === 'paid' && !o.payment?.simulated && (
+                {o.status === 'paid' && !o.payment?.test_mode && (
                   <Button size="sm" variant="outline" icon={<Truck className="h-4 w-4" />} onClick={() => setShipping(o)}>Marcar em transporte</Button>
                 )}
                 <Button size="sm" variant="ghost" icon={<MessageCircle className="h-4 w-4" />} onClick={() => openChat(o)} aria-label="Conversar com o comprador">

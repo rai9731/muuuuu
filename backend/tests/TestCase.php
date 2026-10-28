@@ -17,12 +17,17 @@ abstract class TestCase extends BaseTestCase
         foreach ([
             'APP_ENV' => 'testing', 'DB_CONNECTION' => 'sqlite', 'DB_DATABASE' => ':memory:', 'DB_URL' => '', 'DB_HOST' => '',
             'CACHE_STORE' => 'array', 'SESSION_DRIVER' => 'array', 'QUEUE_CONNECTION' => 'sync',
+            // O container recebe ASAAS_* do .env (env_file do Compose): os testes nunca podem lê-las.
+            'ASAAS_ENV' => '', 'ASAAS_API_URL' => '', 'ASAAS_API_KEY' => '', 'ASAAS_WEBHOOK_TOKEN' => '', 'ASAAS_WEBHOOK_URL' => '',
+            'ASAAS_SANDBOX_AUTHORIZED' => '', 'ASAAS_TEST_CUSTOMER_ID' => '', 'ASAAS_TEST_CUSTOMER_NAME' => '', 'ASAAS_TEST_CUSTOMER_DOCUMENT' => '',
+            'PAYMENT_GATEWAY' => 'simulated',
         ] as $key => $value) {
             putenv("{$key}={$value}");
             $_ENV[$key] = $_SERVER[$key] = $value;
         }
 
         $app = parent::createApplication();
+        \Illuminate\Support\Facades\Http::preventStrayRequests(); // qualquer requisição HTTP sem fake explícito falha
 
         $default = $app['config']->get('database.default');
         $db = (string) $app['config']->get("database.connections.{$default}.database");
