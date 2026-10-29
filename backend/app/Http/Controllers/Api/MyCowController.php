@@ -126,7 +126,7 @@ class MyCowController extends Controller
         $position = (int) $cow->media()->max('position');
         $store = function ($file, string $type) use ($cow, &$position) {
             CowMedia::create([
-                'cow_id' => $cow->id, 'type' => $type, 'path' => $file->store("cows/{$cow->id}", 'public'),
+                'cow_id' => $cow->id, 'type' => $type, 'path' => $file->store("cows/{$cow->id}", 'uploads'),
                 'original_name' => $file->getClientOriginalName(), 'mime' => $file->getMimeType(),
                 'size' => $file->getSize(), 'position' => ++$position,
             ]);

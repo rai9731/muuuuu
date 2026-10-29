@@ -26,7 +26,7 @@ class Presenter
 
     public static function url(?string $path): ?string
     {
-        return $path ? Storage::disk('public')->url($path) : null;
+        return $path ? Storage::disk('uploads')->url($path) : null;
     }
 
     public static function user(User $u): array

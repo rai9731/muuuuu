@@ -12,7 +12,7 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        foreach (['Nelore', 'Holandesa', 'Girolando', 'Gir Leiteiro', 'Angus', 'Brahman', 'Jersey', 'Guzerá'] as $name) {
+        foreach (['Nelore', 'Holandesa', 'Girolando', 'Gir Leiteiro', 'Angus', 'Brahman', 'Jersey', 'Guzerá', 'Mestiço'] as $name) {
             Breed::firstOrCreate(['name' => $name]);
         }
 
