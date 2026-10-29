@@ -47,8 +47,8 @@ class ProfileController extends Controller
         $request->validate(['avatar' => ['required', 'image', 'max:5120']]);
         $user = $request->user();
         $old = $user->avatar_path;
-        $user->update(['avatar_path' => $request->file('avatar')->store("avatars/{$user->id}", 'public')]);
-        $old && Storage::disk('public')->delete($old);
+        $user->update(['avatar_path' => $request->file('avatar')->store("avatars/{$user->id}", 'uploads')]);
+        $old && Storage::disk('uploads')->delete($old);
 
         return ['data' => Presenter::user($user->refresh()), 'message' => 'Foto atualizada.'];
     }

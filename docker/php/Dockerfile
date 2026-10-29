@@ -19,9 +19,11 @@ COPY docker/php/opcache-dev.ini /usr/local/etc/php/conf.d/zz-opcache.ini
 
 ARG UID=1000
 ARG GID=1000
+# /var/www/html/vendor é o ponto de montagem do volume php_vendor: o volume novo herda este dono.
 RUN addgroup -g ${GID} app 2>/dev/null || true \
     && adduser -D -s /bin/sh -u ${UID} -G $(getent group ${GID} | cut -d: -f1) app \
-    && mkdir -p /var/app/storage/uploads && chown -R ${UID}:${GID} /var/app
+    && mkdir -p /var/app/storage/uploads && chown -R ${UID}:${GID} /var/app \
+    && mkdir -p /var/www/html/vendor && chown ${UID}:${GID} /var/www/html/vendor
 
 WORKDIR /var/www/html
 USER app

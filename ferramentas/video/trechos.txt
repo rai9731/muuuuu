@@ -1,0 +1,8 @@
+# Trechos do vídeo "Vacas do Felipe" — um animal (ou grupo) por linha.
+# inicio(s)|fim(s)|nome do arquivo|nome exibido|preço exibido
+0|10|01-flaco-lopez|Flaco Lopez|R$ 4.000
+13|18|02-marlon-freitas|Marlon Freitas|R$ 7.000
+21|26|03-vitor-roque|Vitor Roque|R$ 5.000
+27|34|04-arias-e-sosa|Arias e Sosa|R$ 3.500 cada
+40|43|05-gustavo-gomez|Gustavo Gomez|R$ 3.000
+52|57|06-bando-de-loucos|Bando de Loucos|R$ 2.000 cada

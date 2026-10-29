@@ -23,7 +23,7 @@ up: ## Sobe o ambiente de desenvolvimento (self-heal: derruba órfãos antes)
 	@mkdir -p storage/uploads
 	$(DC) --profile dev down --remove-orphans
 	$(DC) --profile dev up -d --build
-	@if [ ! -d backend/vendor ]; then echo "▶ Instalando dependências do backend..."; $(APP_T) composer install --no-interaction; fi
+	@if ! $(APP_T) test -f vendor/autoload.php; then echo "▶ Instalando dependências do backend..."; $(APP_T) composer install --no-interaction; fi
 	@echo ""
 	@echo "  ✔ Aplicação: http://localhost:$$(grep -E '^APP_PORT=' .env | cut -d= -f2)"
 	@echo "  ℹ Primeira vez? Rode: make fresh"

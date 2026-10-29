@@ -54,3 +54,10 @@ storage/uploads/*
 
 # ─── Docker / Nginx ───
 docker/nginx/active.conf
+
+# ─── Python ───
+__pycache__/
+*.pyc
+
+# ─── Ferramentas de vídeo (pasta temporária) ───
+video-saida/.tmp/
